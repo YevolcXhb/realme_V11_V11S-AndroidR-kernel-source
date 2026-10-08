@@ -1,0 +1,164 @@
+name: Build kernel (realme V11 / RMX3121, MT6833)
+
+# Target: realme V11 / V11S (oppo6833, MT6833), kernel 4.14.186 Android R.
+# The repo ships no AOSP tree, so we bypass Android.mk / kenv.mk / build.config*
+# (they all require prebuilts/ and device/mediatek/build from a full AOSP
+# checkout) and drive `make` directly with a self-contained toolchain pair:
+#   * clang r383902   (moto-common prebuilt, static, includes ld.lld)
+#   * aarch64 binutils 4.9 (LineageOS prebuilt; also provides the
+#     aarch64-linux-androidkernel-* symlinks that build.config.mtk.aarch64
+#     expects for CROSS_COMPILE)
+#
+# Products: Image.gz-dtb (kernel + appended mediatek/mt6833.dtb), Image.gz,
+# Image, vmlinux, System.map and the one dtb.
+#
+# NOT built: odmdtbo.img. The 7 overlay dts in arch/arm64/boot/dts/mediatek/
+# (oppo6833*.dts) `#include <oppo6833*/cust.dtsi>`, and those files live in the
+# AOSP device tree, not in this kernel repo, so they cannot compile here. They
+# are also never referenced by any kernel Makefile rule (only Android.mk:80 and
+# the defconfig's CONFIG_BUILD_ARM64_DTB_OVERLAY_IMAGE_NAMES). The dtbo
+# partition therefore stays stock on the device.
+
+on:
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: Kernel defconfig name (without _defconfig)
+        required: true
+        default: oppo6833
+        type: choice
+        options:
+          - oppo6833
+          - oppo6833_debug
+  push:
+    branches: [main, master]
+    paths:
+      - '.github/workflows/build-kernel.yml'
+      - 'Makefile'
+      - 'Kconfig'
+      - 'arch/arm64/**'
+      - 'kernel/**'
+      - 'drivers/**'
+      - 'include/**'
+      - 'scripts/**'
+
+permissions:
+  contents: read
+
+env:
+  ARCH: arm64
+  CLANG_TRIPLE: aarch64-linux-gnu-
+  CROSS_COMPILE: aarch64-linux-androidkernel-
+
+jobs:
+  build:
+    name: Build ${{ github.event.inputs.defconfig || 'oppo6833' }} kernel
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          # libssl-dev: scripts/sign-file + extract-cert link against -lcrypto
+          #   (defconfig has CONFIG_MODULE_SIG=y).
+          # gcc-9: the shipped scripts/dtc/*.c_shipped define `yylloc` without
+          #   `extern`; gcc-10+ (default -fno-common) makes that a duplicate
+          #   symbol error. gcc-9 keeps -fcommon on.
+          # bc/bison/flex/cpio: standard 4.14 build deps.
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex cpio libssl-dev gcc-9 g++-9
+
+      - name: Cache toolchains
+        id: tc
+        uses: actions/cache@v4
+        with:
+          path: toolchains
+          key: kernel-toolchains-clang-r383902-binutils-4.9-v1
+
+      - name: Fetch toolchains
+        if: steps.tc.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p toolchains
+          git clone --depth 1 -b master \
+            https://github.com/moto-common/platform_prebuilts_clang_host_linux-x86_clang-r383902 \
+            toolchains/clang-r383902
+          git clone --depth 1 -b lineage-19.1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
+            toolchains/gcc-aarch64-linux-android-4.9
+
+      - name: Verify toolchain layout
+        run: |
+          set -euo pipefail
+          CLANG_BIN="$PWD/toolchains/clang-r383902/bin"
+          GCC_BIN="$PWD/toolchains/gcc-aarch64-linux-android-4.9/bin"
+          for f in "$CLANG_BIN/clang" "$CLANG_BIN/ld.lld" "$CLANG_BIN/llvm-nm" "$CLANG_BIN/llvm-objcopy"; do
+            test -x "$f" || { echo "missing $f"; exit 1; }
+          done
+          # Makefile:503 derives GCC_TOOLCHAIN_DIR from `which $(CROSS_COMPILE)elfedit`.
+          test -x "$GCC_BIN/${CROSS_COMPILE}elfedit" || { echo "missing ${CROSS_COMPILE}elfedit"; exit 1; }
+          test -x "$GCC_BIN/${CROSS_COMPILE}as" || { echo "missing ${CROSS_COMPILE}as (needed: -no-integrated-as)"; exit 1; }
+          echo "toolchains ok"
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          TOOLS="$PWD/toolchains"
+          export PATH="$TOOLS/clang-r383902/bin:$TOOLS/gcc-aarch64-linux-android-4.9/bin:$PATH"
+          # ld.lld is not the fully static binary clang is; give it its LLVM libs.
+          export LD_LIBRARY_PATH="$TOOLS/clang-r383902/lib64:${LD_LIBRARY_PATH:-}"
+
+          DEFCONFIG="${{ github.event.inputs.defconfig || 'oppo6833' }}"
+          mkargs=(
+            O=out ARCH=arm64
+            CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy
+            CLANG_TRIPLE="$CLANG_TRIPLE"
+            CROSS_COMPILE="$CROSS_COMPILE"
+            HOSTCC=gcc-9 HOSTCXX=g++-9
+          )
+
+          echo "== toolchain versions =="
+          clang --version | head -2
+          ld.lld --version
+          ${CROSS_COMPILE}as --version | head -1
+          gcc-9 --version | head -1
+
+          echo "== defconfig: ${DEFCONFIG} =="
+          make -j"$(nproc)" "${mkargs[@]}" "${DEFCONFIG}_defconfig" 2>&1 | tee build.log
+
+          echo "== build: Image.gz-dtb =="
+          make -j"$(nproc)" "${mkargs[@]}" Image.gz-dtb 2>&1 | tee -a build.log
+
+          echo "== products =="
+          ls -la out/arch/arm64/boot/Image out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb
+          ls -la out/arch/arm64/boot/dts/mediatek/*.dtb
+
+      - name: Upload kernel images
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ github.event.inputs.defconfig || 'oppo6833' }}-${{ github.sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            out/arch/arm64/boot/Image
+            out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/Image.gz-dtb
+            out/arch/arm64/boot/dts/mediatek/*.dtb
+            out/vmlinux
+            out/System.map
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: ignore
+          path: build.log
