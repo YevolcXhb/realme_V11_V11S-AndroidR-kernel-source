@@ -124,6 +124,17 @@ jobs:
           # ld.lld is not the fully static binary clang is; give it its LLVM libs.
           export LD_LIBRARY_PATH="$TOOLS/clang-r383902/lib64:${LD_LIBRARY_PATH:-}"
 
+          # Some Oplus headers reach across the tree by the AOSP directory name of
+          # this kernel, e.g. drivers/power/oplus/charger_ic/oplus_battery_mtk6853R.h
+          # and ..._mtk6853R/6873R/6885R/6889R.h include
+          #   "../../../../kernel-4.14/drivers/misc/mediatek/typec/tcpc/inc/tcpm.h"
+          # From this file's directory that lands on <repo>/kernel-4.14/drivers/..,
+          # which only exists when the kernel checkout is reachable as kernel-4.14.
+          # Reproduce that layout instead of editing vendor sources.
+          test -e kernel-4.14 || ln -s . kernel-4.14
+          test -r kernel-4.14/drivers/misc/mediatek/typec/tcpc/inc/tcpm.h
+          echo "kernel-4.14 shim ok"
+
           DEFCONFIG="${{ github.event.inputs.defconfig || 'oppo6833' }}"
           mkargs=(
             O=out ARCH=arm64
