@@ -49,6 +49,16 @@ env:
   ARCH: arm64
   CLANG_TRIPLE: aarch64-linux-gnu-
   CROSS_COMPILE: aarch64-linux-androidkernel-
+  # Only one file in this tree consults TARGET_PRODUCT:
+  # drivers/input/oppo_secure_common/oppo_secure_common/Makefile. It keys
+  # CONFIG_OPPO_BSP_SECCOM_PLATFORM off it, and its final `else` branch is a
+  # Qualcomm board, so oppo_secure_common.c ends up including <soc/qcom/smem.h>
+  # (not in this tree) and the build dies. AOSP sets TARGET_PRODUCT globally;
+  # driving make directly must supply it. The Makefile matches with
+  # `findstring oppo6833`, which selects the MT6833 path:
+  # -DCONFIG_OPPO_BSP_SECCOM_PLATFORM=6885 plus the masp asf_inc include dirs
+  # that provide <sec_boot_lib.h>.
+  TARGET_PRODUCT: full_oppo6833
 
 jobs:
   build:
