@@ -2005,3 +2005,43 @@ void __sched usleep_range(unsigned long min, unsigned long max)
 	}
 }
 EXPORT_SYMBOL(usleep_range);
+
+/**
+ * msleep_idle - sleep without contributing to the load average
+ * @msecs: Time in milliseconds to sleep for
+ *
+ * Like msleep(), but the task sleeps in TASK_IDLE instead of
+ * TASK_UNINTERRUPTIBLE, so a long-lived polling kernel thread using this
+ * does not show up as uninterruptible sleep in the load average.
+ */
+void msleep_idle(unsigned int msecs)
+{
+	unsigned long timeout = msecs_to_jiffies(msecs) + 1;
+
+	while (timeout)
+		timeout = schedule_timeout_idle(timeout);
+}
+EXPORT_SYMBOL(msleep_idle);
+
+/**
+ * usleep_range_idle - sleep for an approximate time without load contribution
+ * @min: Minimum time in usecs to sleep
+ * @max: Maximum time in usecs to sleep
+ *
+ * Like usleep_range(), but the task sleeps in TASK_IDLE instead of
+ * TASK_UNINTERRUPTIBLE so periodic kernel threads do not inflate the load
+ * average while they wait for their next poll interval.
+ */
+void __sched usleep_range_idle(unsigned long min, unsigned long max)
+{
+	ktime_t exp = ktime_add_us(ktime_get(), min);
+	u64 delta = (u64)(max - min) * NSEC_PER_USEC;
+
+	for (;;) {
+		__set_current_state(TASK_IDLE);
+		/* Do not return before the requested sleep time has elapsed */
+		if (!schedule_hrtimeout_range(&exp, delta, HRTIMER_MODE_ABS))
+			break;
+	}
+}
+EXPORT_SYMBOL(usleep_range_idle);

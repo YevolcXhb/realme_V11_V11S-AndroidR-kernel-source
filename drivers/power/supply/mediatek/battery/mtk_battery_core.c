@@ -2595,7 +2595,8 @@ int battery_update_routine(void *x)
 #endif /* OPLUS_FEATURE_CHG_BASIC */
 
 	while (1) {
-		wait_event(gm.wait_que,
+		/* idle wait: only wakes on FG/tracking updates */
+		wait_event_idle(gm.wait_que,
 			(gm.fg_update_flag > 0)
 			|| (gm.tracking_cb_flag > 0)
 			|| (gm.onepercent_cb_flag > 0));

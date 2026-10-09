@@ -491,7 +491,8 @@ static int gauge_coulomb_thread(void *arg)
 	struct timespec start, end, duraction;
 
 	while (1) {
-		wait_event(wait_que, (coulomb_thread_timeout == true));
+		/* idle wait: this only wakes on an FG coulomb interrupt */
+		wait_event_idle(wait_que, (coulomb_thread_timeout == true));
 		coulomb_thread_timeout = false;
 		get_monotonic_boottime(&start);
 		ft_trace("[%s]=>\n", __func__);

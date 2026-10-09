@@ -694,10 +694,13 @@ static int kwdt_thread(void *arg)
 			}
 		}
 
+		/* TASK_IDLE sleep: this kicker idles between kicks, so it must
+		 * not be accounted into loadavg (nr_uninterruptible).
+		 */
 #ifdef KWDT_KICK_TIME_ALIGN
-		usleep_range(curInterval, curInterval + SOFT_KICK_RANGE);
+		usleep_range_idle(curInterval, curInterval + SOFT_KICK_RANGE);
 #else
-		usleep_range(g_kinterval*1000*1000,
+		usleep_range_idle(g_kinterval*1000*1000,
 			g_kinterval*1000*1000 + SOFT_KICK_RANGE);
 #endif
 

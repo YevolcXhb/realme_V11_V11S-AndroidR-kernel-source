@@ -317,8 +317,17 @@ static int __init kernel_fb_init(void)
 	INIT_LIST_HEAD(&g_pkts->packets);
 	spin_lock_init(&g_pkts->wlock);
 
-	g_pkts->flush_task = kthread_create(fb_flush_thread, g_pkts, "fb_flush");
-	if (!g_pkts->flush_task) {
+	/*
+	 * kthread_run() instead of kthread_create(): the flush thread starts
+	 * its life blocked in kthread_create_on_node()'s TASK_UNINTERRUPTIBLE
+	 * schedule() and is only woken by oplus_kevent_fb() when a feedback
+	 * packet is queued.  With no packet ever queued the task never gets
+	 * scheduled even once, so it sits in uninterruptible sleep forever and
+	 * is permanently counted into the load average.
+	 */
+	g_pkts->flush_task = kthread_run(fb_flush_thread, g_pkts, "fb_flush");
+	if (IS_ERR(g_pkts->flush_task)) {
+		g_pkts->flush_task = NULL;
 		return -ENODEV;
 	}
 

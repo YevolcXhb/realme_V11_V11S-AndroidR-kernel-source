@@ -428,7 +428,8 @@ int oplus_usbtemp_monitor_common(void *data)
 			condition1 = false;
 			condition2 = false;
 		}
-		msleep(delay);
+		/* idle sleep: the monitor polls, it must not load loadavg */
+		msleep_idle(delay);
 
 		if(usbtemp_debug & OPEN_LOG_BIT) {
 			pr_err("usbtemp: delay %d",delay);

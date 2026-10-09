@@ -326,7 +326,12 @@ static void mtk_nanohub_sync_time_func(unsigned long data)
 static int mtk_nanohub_direct_push_work(void *data)
 {
 	for (;;) {
-		wait_event(chre_kthread_wait,
+		/*
+		 * TASK_IDLE: this worker is idle whenever no wakeup packet is
+		 * pending, so an uninterruptible sleep would keep it counted into
+		 * the load average around the clock.
+		 */
+		wait_event_idle(chre_kthread_wait,
 			READ_ONCE(chre_kthread_wait_condition));
 		WRITE_ONCE(chre_kthread_wait_condition, false);
 		mtk_nanohub_read_wp_queue();
@@ -1826,7 +1831,8 @@ void mtk_nanohub_power_up_loop(void *data)
 	struct mtk_nanohub_device *device = mtk_nanohub_dev;
 	unsigned long flags = 0;
 
-	wait_event(power_reset_wait,
+	/* TASK_IDLE: only ever woken by an SCP reset, idle the rest of the time */
+	wait_event_idle(power_reset_wait,
 		READ_ONCE(scp_system_ready) && READ_ONCE(scp_chre_ready));
 	spin_lock_irqsave(&scp_state_lock, flags);
 	WRITE_ONCE(scp_chre_ready, false);

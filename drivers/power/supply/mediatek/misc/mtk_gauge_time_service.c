@@ -264,7 +264,8 @@ static int gtimer_thread(void *arg)
 	struct timespec stime, endtime, duraction;
 
 	while (1) {
-		wait_event(wait_que, (gtimer_thread_timeout == true));
+		/* TASK_IDLE: only woken by the gauge timer callback */
+		wait_event_idle(wait_que, (gtimer_thread_timeout == true));
 		gtimer_thread_timeout = false;
 		get_monotonic_boottime(&stime);
 		mutex_gtimer_lock();

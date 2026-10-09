@@ -1677,7 +1677,8 @@ static int hang_detect_thread(void *arg)
 
 	sched_setscheduler(current, SCHED_FIFO, &param);
 	reset_hang_info();
-	msleep(120 * 1000);
+	/* TASK_IDLE sleep: hang_detect only watches, it must not load loadavg */
+	msleep_idle(120 * 1000);
 	pr_debug("[Hang_Detect] hang_detect thread starts.\n");
 
 #ifdef BOOT_UP_HANG
@@ -1777,7 +1778,7 @@ static int hang_detect_thread(void *arg)
 			reset_hang_info();
 		}
 
-		msleep((HD_INTER) * 1000);
+		msleep_idle((HD_INTER) * 1000);
 	}
 	return 0;
 }

@@ -123,7 +123,7 @@ static int fsm_poll_main(void *data)
 						break;
 					}
 					count++;
-					msleep(200);
+					msleep_idle(200);
 				}
 				if (count) {
 					CCCI_ERROR_LOG(poller_ctl->md_id, FSM,
@@ -136,7 +136,8 @@ static int fsm_poll_main(void *data)
 			}
 		}
 next:
-		msleep(POLLING_INTERVAL_TIME);
+		/* idle sleep: the MD status poller must not load loadavg */
+		msleep_idle(POLLING_INTERVAL_TIME);
 	}
 	return 0;
 }

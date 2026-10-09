@@ -289,6 +289,32 @@ do {										\
 	__wait_event(wq_head, condition);					\
 } while (0)
 
+#define __wait_event_idle(wq_head, condition)					\
+	(void)___wait_event(wq_head, condition, TASK_IDLE, 0, 0,		\
+			    schedule())
+
+/**
+ * wait_event_idle - wait for a condition without contributing to system load
+ * @wq_head: the waitqueue to wait on
+ * @condition: a C expression for the event to wait for
+ *
+ * The process is put to sleep (TASK_IDLE) until the @condition evaluates to
+ * true. TASK_IDLE is excluded from the load average and from the
+ * uninterruptible task accounting, which makes it the right state for
+ * long-lived kernel threads that only wake up when their own subsystem
+ * needs them.
+ *
+ * wake_up() has to be called after changing any variable that could
+ * change the result of the wait condition.
+ */
+#define wait_event_idle(wq_head, condition)					\
+do {										\
+	might_sleep();								\
+	if (condition)								\
+		break;								\
+	__wait_event_idle(wq_head, condition);					\
+} while (0)
+
 #define __io_wait_event(wq_head, condition)					\
 	(void)___wait_event(wq_head, condition, TASK_UNINTERRUPTIBLE, 0, 0,	\
 			    io_schedule())
@@ -359,6 +385,36 @@ do {										\
 	might_sleep();								\
 	if (!___wait_cond_timeout(condition))					\
 		__ret = __wait_event_timeout(wq_head, condition, timeout);	\
+	__ret;									\
+})
+
+#define __wait_event_idle_timeout(wq_head, condition, timeout)			\
+	___wait_event(wq_head, ___wait_cond_timeout(condition),			\
+		      TASK_IDLE, 0, timeout,					\
+		      __ret = schedule_timeout_idle(__ret))
+
+/**
+ * wait_event_idle_timeout - sleep without load contribution until a condition
+ * gets true or a timeout elapses
+ * @wq_head: the waitqueue to wait on
+ * @condition: a C expression for the event to wait for
+ * @timeout: timeout, in jiffies
+ *
+ * Like wait_event_timeout(), but the process sleeps in TASK_IDLE, which is
+ * not accounted as system load.
+ *
+ * Returns:
+ * 0 if the @condition evaluated to %false after the @timeout elapsed,
+ * 1 if the @condition evaluated to %true after the @timeout elapsed,
+ * or the remaining jiffies (at least 1) if the @condition evaluated
+ * to %true before the @timeout elapsed.
+ */
+#define wait_event_idle_timeout(wq_head, condition, timeout)			\
+({										\
+	long __ret = timeout;							\
+	might_sleep();								\
+	if (!___wait_cond_timeout(condition))					\
+		__ret = __wait_event_idle_timeout(wq_head, condition, timeout);	\
 	__ret;									\
 })
 

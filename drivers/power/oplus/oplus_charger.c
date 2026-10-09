@@ -1491,7 +1491,8 @@ static int __ref shortc_thread_main(void *data)
 	while (!kthread_should_stop()) {
 		set_current_state(TASK_RUNNING);
 		oplus_chg_short_c_battery_check(chip);
-		set_current_state(TASK_UNINTERRUPTIBLE);
+		/* TASK_IDLE: the check only runs once after each explicit wakeup */
+		set_current_state(TASK_IDLE);
 		schedule();
 	}
 	return rc;
@@ -1547,8 +1548,15 @@ int oplus_chg_init(struct oplus_chg_chip *chip)
 	g_charger_chip = chip;
 	oplus_chg_awake_init(chip);
 	INIT_DELAYED_WORK(&chip->update_work, oplus_chg_update_work);
-	chip->shortc_thread = kthread_create(shortc_thread_main, (void *)chip, thread_name);
-	if (!chip->shortc_thread) {
+	/*
+	 * kthread_run() instead of kthread_create(): the short-circuit check
+	 * thread starts blocked in kthread_create_on_node() and is only woken
+	 * from the charger IRQ path.  Without kthread_run() it could stay
+	 * uninterruptible forever and be counted into the load average.
+	 */
+	chip->shortc_thread = kthread_run(shortc_thread_main, (void *)chip, thread_name);
+	if (IS_ERR(chip->shortc_thread)) {
+		chip->shortc_thread = NULL;
 		chg_err("Can't create shortc_thread\n");
 		rc = -EPROBE_DEFER;
 		goto power_psy_reg_failed;

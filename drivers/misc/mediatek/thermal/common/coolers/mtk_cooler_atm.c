@@ -465,7 +465,14 @@ mtk_eara_thermal_pb_handle(int total_pwr_budget,
 			   int max_cpu_power, int max_gpu_power,
 			   int max_vpu_power,  int max_mdla_power)
 {
-	pr_notice("E_WF: %s doesn't exist\n", __func__);
+	/* Weak stub: the real EARA handler lives in
+	 * drivers/misc/mediatek/thermal/eara_thermal/ and is only compiled in
+	 * when CONFIG_MTK_EARA_THERMAL is enabled (not set in
+	 * oppo6833_defconfig). This is called on every thermal budget update,
+	 * so a pr_notice here floods the kernel log at ~100 lines/s and
+	 * overruns the printk ring buffer, destroying real error history.
+	 */
+	pr_debug("E_WF: %s doesn't exist\n", __func__);
 	return 0;
 }
 

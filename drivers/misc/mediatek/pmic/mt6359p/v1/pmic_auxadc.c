@@ -418,7 +418,8 @@ static int mdrt_kthread(void *x)
 		mutex_unlock(&mdrt_mutex);
 		__pm_relax(&mdrt_wakelock);
 
-		set_current_state(TASK_INTERRUPTIBLE);
+		/* TASK_IDLE: the monitor is idle until the next explicit wakeup */
+		set_current_state(TASK_IDLE);
 		schedule();
 	}
 	return 0;
@@ -429,7 +430,14 @@ static void mdrt_monitor_init(void)
 	wakeup_source_init(&mdrt_wakelock, "MDRT Monitor wakelock");
 	mutex_init(&mdrt_mutex);
 	mdrt_adc = pmic_get_register_value(PMIC_AUXADC_ADC_OUT_MDRT);
-	mdrt_thread_handle = kthread_create(mdrt_kthread, NULL, "mdrt_thread");
+	/*
+	 * kthread_run() instead of kthread_create(): the monitor thread starts
+	 * its life blocked in kthread_create_on_node()'s TASK_UNINTERRUPTIBLE
+	 * schedule() and nothing wakes it until an MDRT event arrives.  With the
+	 * task never scheduled it stays uninterruptible forever and is
+	 * permanently counted into the load average.
+	 */
+	mdrt_thread_handle = kthread_run(mdrt_kthread, NULL, "mdrt_thread");
 	if (IS_ERR(mdrt_thread_handle)) {
 		mdrt_thread_handle = NULL;
 /*

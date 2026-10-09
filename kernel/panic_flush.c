@@ -42,7 +42,12 @@ static int panic_flush_thread(void *data)
 repeat:
 	if (kthread_should_stop())
 		return 0;
-	wait_event(pfc->flush_wq, kthread_should_stop() ||
+	/*
+	 * TASK_IDLE sleep: this thread exists only to funnel panic-time flushes
+	 * and is idle for the whole uptime otherwise.  Sleeping in
+	 * TASK_UNINTERRUPTIBLE made it a permanent member of the load average.
+	 */
+	wait_event_idle(pfc->flush_wq, kthread_should_stop() ||
 			atomic_read(&pfc->flush_issuing) > 0);
 	if (atomic_read(&pfc->flush_issuing) > 0) {
 		iterate_supers(panic_issue_flush, &flush_count);
