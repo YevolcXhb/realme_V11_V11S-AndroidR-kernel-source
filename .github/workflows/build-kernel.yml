@@ -218,16 +218,6 @@ jobs:
           fi
 
           echo "OK: all $n_cur exported CRCs match the vendor-compatible baseline."
-            changed=$(grep -c '^-[^-]' /tmp/crc.diff || true)
-            echo "::error::$changed exported symbol MODVERSIONS CRC(s) differ from the baseline."
-            echo "::error::Vendor modules in /vendor/lib/modules/ will refuse to load (Exec format error)."
-            echo "::error::A CONFIG in this change altered an exported struct layout. Revert it, or rebuild the vendor .ko too."
-            echo "== first 40 differences (baseline '-', built '+') =="
-            head -40 /tmp/crc.diff
-            exit 1
-          fi
-
-          echo "OK: all $n_cur exported CRCs match the vendor-compatible baseline."
 
       - name: Upload kernel images
         if: success()
