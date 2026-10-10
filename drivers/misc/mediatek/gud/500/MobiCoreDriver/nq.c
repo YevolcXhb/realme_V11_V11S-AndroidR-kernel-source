@@ -250,7 +250,7 @@ static int irq_bh_worker(void *arg)
 	struct notification_queue *rx = l_ctx.nq.rx;
 
 	while (1) {
-		wait_for_completion_killable(&l_ctx.irq_bh_complete);
+		wait_for_completion_idle(&l_ctx.irq_bh_complete);
 
 		/* This thread can only be stopped with nq_stop */
 		if (!l_ctx.irq_bh_thread_run)

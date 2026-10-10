@@ -405,7 +405,7 @@ int mtk_ipi_recv(struct mtk_ipi_device *ipidev, int ipi_id)
 		return IPI_UNAVAILABLE;
 
 	/* receive the ipi from ISR */
-	wait_for_completion(&pin->notify);
+	wait_for_completion_idle(&pin->notify);
 
 	ipi_monitor(ipidev, ipi_id, RECV_MSG);
 	ipidev->ipi_last_done = ipi_id;

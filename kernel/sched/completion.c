@@ -154,6 +154,24 @@ void __sched wait_for_completion(struct completion *x)
 EXPORT_SYMBOL(wait_for_completion);
 
 /**
+ * wait_for_completion_idle: - waits for completion of a task
+ * @x:  holds the state of this particular completion
+ *
+ * Like wait_for_completion(), but sleeps in TASK_IDLE instead of
+ * TASK_UNINTERRUPTIBLE. It is meant for kernel threads that block for an
+ * unbounded time on a completion they cannot influence, where the blocking is
+ * not an indication of I/O pressure. Because TASK_IDLE carries TASK_NOLOAD,
+ * such a thread no longer counts towards the load average; it still shows up
+ * in /proc as "I" so it remains visible.
+ *
+ * It is NOT interruptible and there is no timeout.
+ */
+void __sched wait_for_completion_idle(struct completion *x)
+{
+	wait_for_common(x, MAX_SCHEDULE_TIMEOUT, TASK_IDLE);
+}
+
+/**
  * wait_for_completion_timeout: - waits for completion of a task (w/timeout)
  * @x:  holds the state of this particular completion
  * @timeout:  timeout value in jiffies
