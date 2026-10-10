@@ -625,3 +625,33 @@ CONFIG_USB_USBNET=y
 #CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT=y
 #CONFIG_MTK_DRM_KEY_MNG_SUPPORT=y
 #endif /* OPLUS_FEATURE_SECURITY_COMMON */
+
+#
+# --- Container / chroot support (added for the Ubuntu chroot use case) ---
+#
+# This defconfig is written in the vendor's "partially listed + Kconfig
+# defaults fill in the rest" style, so symbols that are already `y` in the
+# built kernel (CGROUPS, NAMESPACES, EXPERT, FS_POSIX_ACL, ...) are absent
+# here on purpose. The lines below are the ones that Kconfig defaults to `n`
+# and that user space (ruri containers, systemd-in-chroot) actually needs.
+#
+# Dependency notes, verified against this tree's Kconfig:
+#   IPC_NS        depends on (SYSVIPC || POSIX_MQUEUE)  -> needs SYSVIPC=y
+#   TMPFS_POSIX_ACL  selects TMPFS_XATTR + FS_POSIX_ACL
+#   CHECKPOINT_RESTORE selects PROC_CHILDREN (gives /proc/<pid>/task/<pid>/children)
+# Deliberately NOT enabled here:
+#   DEVTMPFS  - changes how Android's own /dev is populated, needs its own bring-up.
+#   USER_NS   - only needed for rootless containers, but it lets any unprivileged
+#               process create a user namespace, which is a large attack surface
+#               on a device that still runs Android apps. All containers on this
+#               device run with rootless="false", so it buys nothing today.
+CONFIG_SYSVIPC=y
+CONFIG_POSIX_MQUEUE=y
+CONFIG_IPC_NS=y
+CONFIG_TMPFS_XATTR=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_CGROUP_DEVICE=y
+CONFIG_CGROUP_PIDS=y
+CONFIG_CHECKPOINT_RESTORE=y
+CONFIG_FANOTIFY=y
+CONFIG_FANOTIFY_ACCESS_PERMISSIONS=y
