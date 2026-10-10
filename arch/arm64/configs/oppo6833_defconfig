@@ -636,22 +636,53 @@ CONFIG_USB_USBNET=y
 # and that user space (ruri containers, systemd-in-chroot) actually needs.
 #
 # Dependency notes, verified against this tree's Kconfig:
-#   IPC_NS        depends on (SYSVIPC || POSIX_MQUEUE)  -> needs SYSVIPC=y
 #   TMPFS_POSIX_ACL  selects TMPFS_XATTR + FS_POSIX_ACL
 #   CHECKPOINT_RESTORE selects PROC_CHILDREN (gives /proc/<pid>/task/<pid>/children)
+#
+# MODVERSIONS SAFETY -- read this before adding anything to this file.
+#
+# This kernel is built with CONFIG_MODVERSIONS=y and the boot image loads nine
+# vendor modules from /vendor/lib/modules (wmt_drv, wlan_drv_gen4m,
+# wmt_chrdev_wifi, bt_drv, gps_drv, fmradio_drv, met, fpsgo, kheaders). Each one
+# carries a CRC-versioned import list that genksyms generated from the OEM
+# configuration. genksyms hashes the *expanded type definitions* reachable from
+# a symbol's signature, so flipping any CONFIG that changes the layout of an
+# exported struct re-hashes every symbol that can reach that struct.
+#
+# Measured on this tree by diffing the two vmlinux DWARF type graphs (gdb dumps
+# plus a reachability walk): exactly four exported types differ between the OEM
+# configuration and the one that broke the device --
+#   CONFIG_SYSVIPC      -> struct task_struct   (+sysvsem/+shm_clist/+sysvshm)
+#   CONFIG_FANOTIFY     -> struct user_struct   (+fanotify_listeners)
+#   CONFIG_POSIX_MQUEUE -> struct user_struct   (+mq_bytes)
+#   CONFIG_CGROUP_DEVICE + CONFIG_CGROUP_PIDS
+#                       -> enum cgroup_subsys_id gains (+devices/+pids), which
+#                          resizes struct cgroup and struct css_set
+#                          subsys[]/e_csets[]/e_cset_node[] from [7] to [9]
+# Those four types sit on the reachability path of nearly every exported symbol,
+# so 7569 of 11239 CRCs drifted, and every vendor module then failed to load
+# with "disagrees about version of symbol module_layout"
+# (module_layout: 0x0c42ea91 OEM vs 0x66bb0ea2 as built). CONFIG_MODULE_FORCE_LOAD
+# is off in this tree, so `modprobe --force` cannot rescue a mismatch either.
+#
+# The three lines kept below were verified to be header-neutral: across the whole
+# tree they only add or remove declarations, never struct members.
+#   CHECKPOINT_RESTORE -> include/linux/eventpoll.h:26 and include/linux/seccomp.h:96
+#                         (function declarations only)
+#   TMPFS_XATTR / TMPFS_POSIX_ACL -> no include/linux gate at all
+# Do NOT re-add SYSVIPC, POSIX_MQUEUE, FANOTIFY, CGROUP_DEVICE or CGROUP_PIDS
+# unless the nine vendor modules are rebuilt from this tree as well.
+#
 # Deliberately NOT enabled here:
+#   IPC_NS    - depends on (SYSVIPC || POSIX_MQUEUE), and both are Modversions-
+#               unsafe as described above. This device has never had an IPC
+#               namespace (ruri printed "ipc namespace is not supported" and the
+#               containers ran fine), so dropping it costs nothing today.
 #   DEVTMPFS  - changes how Android's own /dev is populated, needs its own bring-up.
 #   USER_NS   - only needed for rootless containers, but it lets any unprivileged
 #               process create a user namespace, which is a large attack surface
 #               on a device that still runs Android apps. All containers on this
 #               device run with rootless="false", so it buys nothing today.
-CONFIG_SYSVIPC=y
-CONFIG_POSIX_MQUEUE=y
-CONFIG_IPC_NS=y
 CONFIG_TMPFS_XATTR=y
 CONFIG_TMPFS_POSIX_ACL=y
-CONFIG_CGROUP_DEVICE=y
-CONFIG_CGROUP_PIDS=y
 CONFIG_CHECKPOINT_RESTORE=y
-CONFIG_FANOTIFY=y
-CONFIG_FANOTIFY_ACCESS_PERMISSIONS=y
