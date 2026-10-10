@@ -34,6 +34,7 @@ on:
     branches: [main, master]
     paths:
       - '.github/workflows/build-kernel.yml'
+      - 'ci/**'
       - 'Makefile'
       - 'Kconfig'
       - 'arch/arm64/**'
@@ -159,6 +160,74 @@ jobs:
           echo "== products =="
           ls -la out/arch/arm64/boot/Image out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb
           ls -la out/arch/arm64/boot/dts/mediatek/*.dtb
+
+      - name: Check MODVERSIONS CRCs against baseline
+        run: |
+          set -euo pipefail
+          # The vendor .ko under /vendor/lib/modules/ are built against the OEM
+          # defconfig and carry MODVERSIONS CRCs for the symbols they import.
+          # Any CONFIG change that alters an exported struct layout shifts those
+          # CRCs and makes the vendor modules unloadable:
+          #   wmt_drv: disagrees about version of symbol module_layout
+          #   insmod: Exec format error
+          # CONFIG_MODULE_SIG_FORCE=y + no CONFIG_MODULE_FORCE_LOAD means there is
+          # no --force escape hatch, so this must fail loudly at build time.
+          #
+          # ci/modversions-baseline.txt is the known-good table extracted from the
+          # Route A kernel (1920da440), which was verified byte-compatible with
+          # the OEM CRCs for every one of the 11239 exported symbols.
+          NM="${TOOLS:-$PWD/toolchains}/clang-r383902/bin/llvm-nm"
+          [ -x "$NM" ] || NM=llvm-nm
+
+          # Sort both sides with LC_ALL=C so the comparison is purely about the
+          # CRC values, not about locale-dependent collation of symbol names.
+          # Find the __crc_* field by name rather than by column index so this
+          # cannot silently pass if nm's field order changes.
+          # Emit the same "<name> <value>" shape as ci/modversions-baseline.txt.
+          "$NM" out/vmlinux | awk '
+            {
+              name = ""; value = "";
+              for (i = 1; i <= NF; i++) {
+                if ($i ~ /^__crc_/) { name = $i; sub(/^__crc_/, "", name) }
+                else if (value == "" && $i ~ /^[0-9a-fA-F]+$/) value = $i
+              }
+              if (name != "") print name, value
+            }' | LC_ALL=C sort > /tmp/crcs.txt
+          LC_ALL=C sort ci/modversions-baseline.txt > /tmp/crcs-ref.txt
+
+          n_cur=$(wc -l < /tmp/crcs.txt)
+          n_ref=$(wc -l < /tmp/crcs-ref.txt)
+          echo "symbols with CRC: built=$n_cur baseline=$n_ref"
+
+          # A missing/renamed symbol is as dangerous as a changed one, so compare
+          # the line counts as well as the tables themselves.
+          if [ "$n_cur" != "$n_ref" ]; then
+            echo "::error::exported symbol count changed: built=$n_cur baseline=$n_ref"
+            diff -u /tmp/crcs-ref.txt /tmp/crcs.txt | head -40 || true
+            exit 1
+          fi
+
+          if ! diff -u /tmp/crcs-ref.txt /tmp/crcs.txt > /tmp/crc.diff; then
+            changed=$(grep -c '^-[^-]' /tmp/crc.diff || true)
+            echo "::error::$changed exported symbol MODVERSIONS CRC(s) differ from the baseline."
+            echo "::error::Vendor modules in /vendor/lib/modules/ will refuse to load (Exec format error)."
+            echo "::error::A CONFIG in this change altered an exported struct layout. Revert it, or rebuild the vendor .ko too."
+            echo "== first 40 differences (baseline '-', built '+') =="
+            head -40 /tmp/crc.diff
+            exit 1
+          fi
+
+          echo "OK: all $n_cur exported CRCs match the vendor-compatible baseline."
+            changed=$(grep -c '^-[^-]' /tmp/crc.diff || true)
+            echo "::error::$changed exported symbol MODVERSIONS CRC(s) differ from the baseline."
+            echo "::error::Vendor modules in /vendor/lib/modules/ will refuse to load (Exec format error)."
+            echo "::error::A CONFIG in this change altered an exported struct layout. Revert it, or rebuild the vendor .ko too."
+            echo "== first 40 differences (baseline '-', built '+') =="
+            head -40 /tmp/crc.diff
+            exit 1
+          fi
+
+          echo "OK: all $n_cur exported CRCs match the vendor-compatible baseline."
 
       - name: Upload kernel images
         if: success()
