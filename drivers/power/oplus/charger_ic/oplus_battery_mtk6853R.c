@@ -3133,40 +3133,79 @@ static int mt_usb_prop_is_writeable(struct power_supply *psy,
  * while plugged in. MT6360 returns uV from the VBUS ADC and uA from the IBUS
  * ADC.
  */
+/*
+ * The VBUS and IBUS ADCs are separate single-shot conversions, so back-to-back
+ * reads of voltage_now / current_now / power_now land on different instants and
+ * occasionally come back 0. A panel polling these nodes then renders a spurious
+ * 0 W. Hold the last non-zero sample for a short window so the three nodes stay
+ * consistent across a poll.
+ *
+ * The cache is only consulted while a charger is present, so unplugging never
+ * leaves a stale reading behind. Cost is a couple of static variables touched
+ * inside the existing get_property path: no timer, no work, nothing while the
+ * nodes go unread.
+ */
+#define OPLUS_CHG_INPUT_HOLD_MS	2000
+
+static int oplus_chg_last_vbus_uv;
+static unsigned long oplus_chg_last_vbus_jiffies;
+static int oplus_chg_last_ibus_ua;
+static unsigned long oplus_chg_last_ibus_jiffies;
+
 static int oplus_chg_get_vbus_uv(void)
 {
 	struct charger_manager *info = NULL;
 	u32 vbus_uv = 0;
+	int value = 0;
 
-	if (!g_oplus_chip)
+	if (!g_oplus_chip || !g_oplus_chip->charger_exist)
 		return 0;
 
 	info = g_oplus_chip->chgic_mtk.oplus_info;
-	if (!info || !info->chg1_dev)
-		return 0;
+	if (info && info->chg1_dev &&
+	    charger_dev_get_vbus(info->chg1_dev, &vbus_uv) == 0)
+		value = (int)vbus_uv;
 
-	if (charger_dev_get_vbus(info->chg1_dev, &vbus_uv) != 0)
-		return 0;
+	if (value != 0) {
+		oplus_chg_last_vbus_uv = value;
+		oplus_chg_last_vbus_jiffies = jiffies;
+		return value;
+	}
 
-	return (int)vbus_uv;
+	if (oplus_chg_last_vbus_uv != 0 &&
+	    time_before(jiffies, oplus_chg_last_vbus_jiffies +
+			msecs_to_jiffies(OPLUS_CHG_INPUT_HOLD_MS)))
+		return oplus_chg_last_vbus_uv;
+
+	return 0;
 }
 
 static int oplus_chg_get_ibus_ua(void)
 {
 	struct charger_manager *info = NULL;
 	u32 ibus_ua = 0;
+	int value = 0;
 
-	if (!g_oplus_chip)
+	if (!g_oplus_chip || !g_oplus_chip->charger_exist)
 		return 0;
 
 	info = g_oplus_chip->chgic_mtk.oplus_info;
-	if (!info || !info->chg1_dev)
-		return 0;
+	if (info && info->chg1_dev &&
+	    charger_dev_get_ibus(info->chg1_dev, &ibus_ua) == 0)
+		value = (int)ibus_ua;
 
-	if (charger_dev_get_ibus(info->chg1_dev, &ibus_ua) != 0)
-		return 0;
+	if (value != 0) {
+		oplus_chg_last_ibus_ua = value;
+		oplus_chg_last_ibus_jiffies = jiffies;
+		return value;
+	}
 
-	return (int)ibus_ua;
+	if (oplus_chg_last_ibus_ua != 0 &&
+	    time_before(jiffies, oplus_chg_last_ibus_jiffies +
+			msecs_to_jiffies(OPLUS_CHG_INPUT_HOLD_MS)))
+		return oplus_chg_last_ibus_ua;
+
+	return 0;
 }
 
 /* uV * uA == pW, so dividing by 1000000 lands on uW. */
