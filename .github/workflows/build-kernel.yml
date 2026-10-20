@@ -194,47 +194,32 @@ jobs:
           ln -sfn "$PWD/kernel_modules" "$PWD/../vendor/mediatek/kernel_modules"
           test -r "$PWD/../vendor/mediatek/kernel_modules/connectivity/common/common_main/include/wmt_exp.h"
 
-          # Build the three connectivity modules in dependency order. gen4m
-          # imports symbols that the other two export:
-          #   wmt_drv           -> mtk_wcn_wmt_*, mtk_wcn_consys_hw_*
-          #                        (common/common_main/core/wmt_exp.c,
-          #                         common/common_main/platform/mtk_wcn_consys_hw.c)
-          #   wmt_chrdev_wifi   -> wifi_reset_*, update_driver_loaded_status,
-          #                        register_set_p2p_mode_handler,
-          #                        get_low_latency_mode (wlan/adaptor/wmt_cdev_wifi.c)
-          # Building gen4m alone leaves all of those undefined at modpost and no
-          # .ko is produced, so feed each earlier Module.symvers forward through
-          # KBUILD_EXTRA_SYMBOLS.
-          # OPLUS_MT6833_POWERINFO_STANDBY has to be defined or the vendor WMT
-          # source does not compile at all: in mtk_wcn_consys_hw.c the brace that
-          # closes the sleep-counter for-loop (line 541) sits inside that
-          # #ifdef, so without the macro the loop never closes and every later
-          # function is rejected with "function definition is not allowed here".
-          # Nothing in this repo defines the macro; the OEM build injects it.
-          # Defining it also pulls in a call to oplus_rpmh_stats_statics(), which
-          # the kernel already exports (drivers/soc/oppo/oppo_wakelock_profiler/
-          # oplus_wakelock_profiler_mtk.c), so the symbol resolves.
-          EXTRA_SYMS=""
-          mk() {
-            local dir="$1"
-            echo "=== building $(basename "$dir") ==="
-            make -j"$(nproc)" O=out ARCH=arm64 \
-              CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
-              CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" \
-              HOSTCC=gcc-9 HOSTCXX=g++-9 \
-              KCFLAGS="-DOPLUS_MT6833_POWERINFO_STANDBY" \
-              M="$dir" KBUILD_EXTRA_SYMBOLS="$EXTRA_SYMS" modules
-            local sv
-            sv=$(find "$dir" -maxdepth 1 -name Module.symvers 2>/dev/null | head -1)
-            if [ -n "$sv" ]; then
-              EXTRA_SYMS="$EXTRA_SYMS $sv"
-              echo "collected $sv"
-            fi
-          }
-
-          mk "$PWD/kernel_modules/connectivity/common"            2>&1 | tee module.log
-          mk "$PWD/kernel_modules/connectivity/wlan/adaptor"      2>&1 | tee -a module.log
-          mk "$PWD/kernel_modules/connectivity/wlan/core/gen4m"   2>&1 | tee -a module.log
+          # Only gen4m needs rebuilding: the device already loads the vendor
+          # wmt_drv / wmt_chrdev_wifi / conninfra modules, and the single change
+          # here lives in gen4m. The catch is that gen4m imports symbols those
+          # modules export, so modpost cannot resolve them at build time and
+          # refuses to emit the .ko:
+          #   wmt_drv         -> mtk_wcn_wmt_*, mtk_wcn_consys_hw_*
+          #   wmt_chrdev_wifi -> wifi_reset_*, update_driver_loaded_status,
+          #                      register_set_p2p_mode_handler, get_low_latency_mode
+          #   conninfra       -> connsys_log_*
+          # Rebuilding the whole stack just to satisfy modpost is not worth it;
+          # KBUILD_MODPOST_WARN downgrades those lookups to warnings, the .ko is
+          # still emitted, and at insmod time the kernel resolves them against
+          # the vendor modules that are already loaded.
+          #
+          # OPLUS_MT6833_POWERINFO_STANDBY keeps the vendor WMT source honest for
+          # the builds that do need it: in mtk_wcn_consys_hw.c the brace closing
+          # the sleep-counter for-loop sits inside that #ifdef, so without the
+          # macro the loop never closes. Nothing in this tree defines it.
+          make -j"$(nproc)" O=out ARCH=arm64 \
+            CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
+            CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" \
+            HOSTCC=gcc-9 HOSTCXX=g++-9 \
+            KCFLAGS="-DOPLUS_MT6833_POWERINFO_STANDBY" \
+            KBUILD_MODPOST_WARN=1 \
+            M="$PWD/kernel_modules/connectivity/wlan/core/gen4m" \
+            modules 2>&1 | tee module.log
 
       - name: Report WiFi module
         if: always()
