@@ -659,23 +659,6 @@ static int oplus_chg_get_batt_current_ua(struct oplus_chg_chip *chip)
 	return oplus_gauge_get_batt_current() * 1000;
 }
 
-/*
- * chip->batt_volt is mV and the current is uA, so mV * uA == nW; dividing by
- * 1000 lands on the uW the power_supply class expects. s64 keeps the product
- * from overflowing before the clamp.
- */
-static int oplus_chg_calc_power_uw(int volt_mv, int current_ua)
-{
-	s64 power_uw = ((s64)volt_mv * (s64)current_ua) / 1000;
-
-	if (power_uw > (s64)INT_MAX)
-		power_uw = (s64)INT_MAX;
-	else if (power_uw < (s64)INT_MIN)
-		power_uw = (s64)INT_MIN;
-
-	return (int)power_uw;
-}
-
 int oplus_battery_get_property(struct power_supply *psy,
 		enum power_supply_property psp,
 		union power_supply_propval *val)
@@ -753,23 +736,6 @@ int oplus_battery_get_property(struct power_supply *psy,
 		 * converted to uA.
 		 */
 		val->intval = oplus_chg_get_batt_current_ua(chip);
-		break;
-	case POWER_SUPPLY_PROP_POWER_NOW:
-		val->intval = oplus_chg_calc_power_uw(chip->batt_volt,
-			oplus_chg_get_batt_current_ua(chip));
-		break;
-	case POWER_SUPPLY_PROP_POWER_AVG:
-		/*
-		 * Same uW contract and the same source as POWER_NOW.
-		 *
-		 * This used to read the fuel gauge's average current, but that is
-		 * the wrong source here: the pack may be a battery emulator board
-		 * with no cell, in which case there is no coulomb counter and the
-		 * gauge reports 0, leaving power_avg permanently 0 and useless as
-		 * a fallback. Sharing the PMIC ADC path keeps it meaningful.
-		 */
-		val->intval = oplus_chg_calc_power_uw(chip->batt_volt,
-			oplus_chg_get_batt_current_ua(chip));
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
 		val->intval = chip->temperature - chip->offset_temp;
