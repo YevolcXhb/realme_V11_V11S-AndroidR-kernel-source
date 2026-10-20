@@ -601,6 +601,60 @@ static int oplus_chg_get_pmic_ibat_ua(u32 *ibat_ua)
 	return charger_dev_get_ibat(info->chg1_dev, ibat_ua);
 }
 
+/*
+ * Battery current in uA, instantaneous, for CURRENT_NOW/POWER_NOW.
+ *
+ * The MT6360 IBAT ADC is a single-shot IIO conversion: issuing a second read
+ * straight after the first comes back as 0. Since CURRENT_NOW and POWER_NOW
+ * are typically read back to back, a zero sample here is almost always a
+ * stale conversion rather than a genuinely idle battery, so treat it as "no
+ * data" and fall through to the fuel gauge. The gauge ops report mA.
+ */
+static int oplus_chg_get_batt_current_ua(struct oplus_chg_chip *chip)
+{
+	u32 ibat_ua = 0;
+	int current_ua;
+
+	if (oplus_chg_get_pmic_ibat_ua(&ibat_ua) == 0 && ibat_ua != 0) {
+		/*
+		 * The ADC reports magnitude only, so the direction is applied
+		 * here. Existing convention: charging is negative.
+		 */
+		current_ua = (int)ibat_ua;
+		if (chip->charger_exist)
+			current_ua = 0 - current_ua;
+		return current_ua;
+	}
+
+	if (oplus_vooc_get_fastchg_started() == true)
+		return oplus_gauge_get_prev_batt_current() * 1000;
+
+	return oplus_gauge_get_batt_current() * 1000;
+}
+
+/* Battery current in uA, averaged, for POWER_AVG. */
+static int oplus_chg_get_batt_avg_current_ua(void)
+{
+	return oplus_gauge_get_batt_current() * 1000;
+}
+
+/*
+ * chip->batt_volt is mV and the current is uA, so mV * uA == nW; dividing by
+ * 1000 lands on the uW the power_supply class expects. s64 keeps the product
+ * from overflowing before the clamp.
+ */
+static int oplus_chg_calc_power_uw(int volt_mv, int current_ua)
+{
+	s64 power_uw = ((s64)volt_mv * (s64)current_ua) / 1000;
+
+	if (power_uw > (s64)INT_MAX)
+		power_uw = (s64)INT_MAX;
+	else if (power_uw < (s64)INT_MIN)
+		power_uw = (s64)INT_MIN;
+
+	return (int)power_uw;
+}
+
 int oplus_battery_get_property(struct power_supply *psy,
 		enum power_supply_property psp,
 		union power_supply_propval *val)
@@ -669,27 +723,7 @@ int oplus_battery_get_property(struct power_supply *psy,
 		/* chip->batt_volt_min is in mV, framework wants uV */
 		val->intval = chip->batt_volt_min * 1000;
 		break;
-	case POWER_SUPPLY_PROP_CURRENT_NOW: {
-		u32 ibat_ua = 0;
-		int current_ua;
-
-		if (oplus_chg_get_pmic_ibat_ua(&ibat_ua) == 0) {
-			/*
-			 * PMIC IBAT ADC reports magnitude only, so the charging
-			 * direction has to be applied here. Keep the existing
-			 * convention: charging is negative, discharging positive.
-			 */
-			current_ua = (int)ibat_ua;
-			if (chip->charger_exist)
-				current_ua = 0 - current_ua;
-		} else if (oplus_vooc_get_fastchg_started() == true) {
-			/* gauge ops report mA, framework wants uA */
-			current_ua = oplus_gauge_get_prev_batt_current() * 1000;
-		} else {
-			/* gauge ops report mA, framework wants uA */
-			current_ua = oplus_gauge_get_batt_current() * 1000;
-		}
-
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		/*
 		 * chip->icharging stays in the unit the rest of this driver
 		 * already assumes (mA): oplus_short.c compares it against
@@ -697,38 +731,22 @@ int oplus_battery_get_property(struct power_supply *psy,
 		 * logs it as mA. Only the value handed to the framework is
 		 * converted to uA.
 		 */
-		val->intval = current_ua;
+		val->intval = oplus_chg_get_batt_current_ua(chip);
 		break;
-	}
-	case POWER_SUPPLY_PROP_POWER_NOW: {
-		u32 ibat_ua = 0;
-		int current_ua;
-		s64 power_uw;
-
-		if (oplus_chg_get_pmic_ibat_ua(&ibat_ua) == 0) {
-			current_ua = (int)ibat_ua;
-			if (chip->charger_exist)
-				current_ua = 0 - current_ua;
-		} else if (oplus_vooc_get_fastchg_started() == true) {
-			current_ua = oplus_gauge_get_prev_batt_current() * 1000;
-		} else {
-			current_ua = oplus_gauge_get_batt_current() * 1000;
-		}
-
+	case POWER_SUPPLY_PROP_POWER_NOW:
+		val->intval = oplus_chg_calc_power_uw(chip->batt_volt,
+			oplus_chg_get_batt_current_ua(chip));
+		break;
+	case POWER_SUPPLY_PROP_POWER_AVG:
 		/*
-		 * chip->batt_volt is mV, current_ua is uA.
-		 * mV * uA = nW, so divide by 1000 to land on the uW the
-		 * power_supply class expects for POWER_NOW.
+		 * Same uW contract as POWER_NOW but sourced from the gauge's
+		 * filtered average, so a reader that falls back to power_avg
+		 * when power_now is momentarily unavailable still gets a
+		 * meaningful number.
 		 */
-		power_uw = ((s64)chip->batt_volt * (s64)current_ua) / 1000;
-		if (power_uw > (s64)INT_MAX)
-			power_uw = (s64)INT_MAX;
-		else if (power_uw < (s64)INT_MIN)
-			power_uw = (s64)INT_MIN;
-
-		val->intval = (int)power_uw;
+		val->intval = oplus_chg_calc_power_uw(chip->batt_volt,
+			oplus_chg_get_batt_avg_current_ua());
 		break;
-	}
 	case POWER_SUPPLY_PROP_TEMP:
 		val->intval = chip->temperature - chip->offset_temp;
 		break;
