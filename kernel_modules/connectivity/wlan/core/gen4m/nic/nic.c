@@ -2074,6 +2074,24 @@ nicConfigPowerSaveProfile(IN struct ADAPTER *prAdapter,
 		return WLAN_STATUS_NOT_SUPPORTED;
 	}
 
+	/*
+	 * Pin the station interface to CAM (constantly awake mode).
+	 *
+	 * Every power-save change funnels through this function -- association,
+	 * reconnect and the periodic profile refresh all land here -- so
+	 * overriding at this single point is what actually keeps the override
+	 * in place. Setting it only once at association is not enough: the
+	 * driver keeps the previous profile in arPowerSaveMode[] and re-applies
+	 * it after a disconnect, and fgEnSpecPwrMgt (set by the /proc setCAM
+	 * path) is written but never read back.
+	 *
+	 * With power save on, the radio dozes between DTIM beacons, which shows
+	 * up on RMX3122 as multi-second RTT spikes and dropped frames on an
+	 * otherwise idle link. P2P and AP interfaces are left alone.
+	 */
+	if (IS_BSS_INDEX_AIS(prAdapter, ucBssIndex))
+		ePwrMode = Param_PowerModeCAM;
+
 	nicPowerSaveInfoMap(prAdapter, ucBssIndex, ePwrMode, ucCaller);
 
 	prAdapter->rWlanInfo.arPowerSaveMode[ucBssIndex].ucBssIndex

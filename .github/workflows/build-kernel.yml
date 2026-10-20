@@ -161,6 +161,55 @@ jobs:
           ls -la out/arch/arm64/boot/Image out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb
           ls -la out/arch/arm64/boot/dts/mediatek/*.dtb
 
+      # Best effort on purpose: the WiFi driver is an out-of-tree module built
+      # from kernel_modules/connectivity/wlan/core/gen4m, and a failure here
+      # must not cost us the kernel image that the flash needs.
+      - name: Build WiFi module (best effort)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          TOOLS="$PWD/toolchains"
+          export PATH="$TOOLS/clang-r383902/bin:$TOOLS/gcc-aarch64-linux-android-4.9/bin:$PATH"
+          export LD_LIBRARY_PATH="$TOOLS/clang-r383902/lib64:${LD_LIBRARY_PATH:-}"
+
+          # Mirrors what drivers/misc/mediatek/connectivity/Makefile exports for
+          # CONSYS_6833: it matches neither the 6779/6873/6853 nor the 3967/6785
+          # list, so WLAN_IP_SET falls through to 1 and MTK_COMBO_CHIP to CONNAC.
+          export MTK_COMBO_CHIP=CONNAC
+          export MTK_PLATFORM_ID=6833
+          export WIFI_IP_SET=1
+          export MTK_ANDROID_WMT=y
+          export MTK_ANDROID_EMI=y
+
+          make -j"$(nproc)" O=out ARCH=arm64 \
+            CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
+            CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" \
+            HOSTCC=gcc-9 HOSTCXX=g++-9 \
+            M="$PWD/kernel_modules/connectivity/wlan/core/gen4m" \
+            modules 2>&1 | tee module.log
+
+      - name: Report WiFi module
+        if: always()
+        run: |
+          echo "== module objects =="
+          find kernel_modules -name '*.ko' 2>/dev/null | sort || true
+          echo "== signing =="
+          for f in $(find kernel_modules -name 'wlan_drv_gen4m.ko' 2>/dev/null); do
+            echo "$f"
+            ls -l "$f"
+          done || true
+
+      - name: Upload WiFi module
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wifimod-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            kernel_modules/**/*.ko
+            module.log
+
       - name: Check MODVERSIONS CRCs against baseline
         run: |
           set -euo pipefail
