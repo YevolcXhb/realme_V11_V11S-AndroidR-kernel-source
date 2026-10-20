@@ -604,18 +604,20 @@ static int oplus_chg_get_pmic_ibat_ua(u32 *ibat_ua)
 /*
  * Battery current in uA, instantaneous, for CURRENT_NOW/POWER_NOW.
  *
- * Neither source is reliable on its own. The MT6360 IBAT ADC is a single-shot
- * IIO conversion, so the second of two back-to-back reads comes back as 0; and
- * once charging completes the MTK fuel gauge gets disabled, after which the
- * gauge path also returns 0. Because CURRENT_NOW and POWER_NOW are normally
- * read one after the other, whichever was read second used to report 0 while
- * the first reported a real value.
+ * Trust the PMIC IBAT ADC whenever it answers, and treat the fuel gauge as a
+ * last resort rather than an equal partner. The gauge is the wrong source on
+ * this hardware: the pack may be a battery emulator board with no cell, in
+ * which case there is no coulomb counter to consult, and MTK additionally
+ * disables the gauge once charging completes. Either way the gauge path
+ * returns 0 and would mask the real current flowing through the battery
+ * connector -- which on an emulator rig is exactly the mainboard's draw.
  *
- * Hold the last real sample for a few seconds so the two agree. A genuinely
- * idle battery still settles to 0: the cache only survives while a fresh
- * non-zero sample keeps arriving within the window.
+ * The ADC is a single-shot IIO conversion, so the second of two back-to-back
+ * reads is stale and comes back 0. CURRENT_NOW and POWER_NOW are normally read
+ * one after the other, so hold the last non-zero sample briefly to keep them
+ * consistent. A genuine idle still reads 0 once no fresh sample arrives.
  */
-#define OPLUS_CHG_CURRENT_HOLD_MS	3000
+#define OPLUS_CHG_CURRENT_HOLD_MS	2000
 
 static int oplus_chg_last_good_ua;
 static unsigned long oplus_chg_last_good_jiffies;
@@ -625,7 +627,7 @@ static int oplus_chg_get_batt_current_ua(struct oplus_chg_chip *chip)
 	u32 ibat_ua = 0;
 	int current_ua;
 
-	if (oplus_chg_get_pmic_ibat_ua(&ibat_ua) == 0 && ibat_ua != 0) {
+	if (oplus_chg_get_pmic_ibat_ua(&ibat_ua) == 0) {
 		/*
 		 * The ADC reports magnitude only, so the direction is applied
 		 * here. Existing convention: charging is negative.
@@ -633,23 +635,28 @@ static int oplus_chg_get_batt_current_ua(struct oplus_chg_chip *chip)
 		current_ua = (int)ibat_ua;
 		if (chip->charger_exist)
 			current_ua = 0 - current_ua;
-	} else if (oplus_vooc_get_fastchg_started() == true) {
-		current_ua = oplus_gauge_get_prev_batt_current() * 1000;
-	} else {
-		current_ua = oplus_gauge_get_batt_current() * 1000;
+
+		if (current_ua != 0) {
+			oplus_chg_last_good_ua = current_ua;
+			oplus_chg_last_good_jiffies = jiffies;
+		} else if (oplus_chg_last_good_ua != 0 &&
+			   time_before(jiffies,
+				       oplus_chg_last_good_jiffies +
+				       msecs_to_jiffies(OPLUS_CHG_CURRENT_HOLD_MS))) {
+			current_ua = oplus_chg_last_good_ua;
+		}
+
+		return current_ua;
 	}
 
-	if (current_ua != 0) {
-		oplus_chg_last_good_ua = current_ua;
-		oplus_chg_last_good_jiffies = jiffies;
-	} else if (oplus_chg_last_good_ua != 0 &&
-		   time_before(jiffies,
-			       oplus_chg_last_good_jiffies +
-			       msecs_to_jiffies(OPLUS_CHG_CURRENT_HOLD_MS))) {
-		current_ua = oplus_chg_last_good_ua;
-	}
+	/*
+	 * The ADC read itself failed. Fall back to the gauge, which is the best
+	 * of the remaining options even though it is meaningless without a cell.
+	 */
+	if (oplus_vooc_get_fastchg_started() == true)
+		return oplus_gauge_get_prev_batt_current() * 1000;
 
-	return current_ua;
+	return oplus_gauge_get_batt_current() * 1000;
 }
 
 /* Battery current in uA, averaged, for POWER_AVG. */
