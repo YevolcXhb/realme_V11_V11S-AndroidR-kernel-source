@@ -205,6 +205,15 @@ jobs:
           # Building gen4m alone leaves all of those undefined at modpost and no
           # .ko is produced, so feed each earlier Module.symvers forward through
           # KBUILD_EXTRA_SYMBOLS.
+          # OPLUS_MT6833_POWERINFO_STANDBY has to be defined or the vendor WMT
+          # source does not compile at all: in mtk_wcn_consys_hw.c the brace that
+          # closes the sleep-counter for-loop (line 541) sits inside that
+          # #ifdef, so without the macro the loop never closes and every later
+          # function is rejected with "function definition is not allowed here".
+          # Nothing in this repo defines the macro; the OEM build injects it.
+          # Defining it also pulls in a call to oplus_rpmh_stats_statics(), which
+          # the kernel already exports (drivers/soc/oppo/oppo_wakelock_profiler/
+          # oplus_wakelock_profiler_mtk.c), so the symbol resolves.
           EXTRA_SYMS=""
           mk() {
             local dir="$1"
@@ -213,6 +222,7 @@ jobs:
               CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
               CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" \
               HOSTCC=gcc-9 HOSTCXX=g++-9 \
+              KCFLAGS="-DOPLUS_MT6833_POWERINFO_STANDBY" \
               M="$dir" KBUILD_EXTRA_SYMBOLS="$EXTRA_SYMS" modules
             local sv
             sv=$(find "$dir" -maxdepth 1 -name Module.symvers 2>/dev/null | head -1)
