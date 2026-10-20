@@ -3124,12 +3124,80 @@ static int mt_usb_prop_is_writeable(struct power_supply *psy,
 
 
 
+/*
+ * Charger input side readings, for the "usb" power supply.
+ *
+ * The battery node can only report what flows in or out of the battery, which
+ * is ~0 while the charger carries the system load (and exactly 0 once the pack
+ * is full). These read the input rail instead, so the numbers stay meaningful
+ * while plugged in. MT6360 returns uV from the VBUS ADC and uA from the IBUS
+ * ADC.
+ */
+static int oplus_chg_get_vbus_uv(void)
+{
+	struct charger_manager *info = NULL;
+	u32 vbus_uv = 0;
+
+	if (!g_oplus_chip)
+		return 0;
+
+	info = g_oplus_chip->chgic_mtk.oplus_info;
+	if (!info || !info->chg1_dev)
+		return 0;
+
+	if (charger_dev_get_vbus(info->chg1_dev, &vbus_uv) != 0)
+		return 0;
+
+	return (int)vbus_uv;
+}
+
+static int oplus_chg_get_ibus_ua(void)
+{
+	struct charger_manager *info = NULL;
+	u32 ibus_ua = 0;
+
+	if (!g_oplus_chip)
+		return 0;
+
+	info = g_oplus_chip->chgic_mtk.oplus_info;
+	if (!info || !info->chg1_dev)
+		return 0;
+
+	if (charger_dev_get_ibus(info->chg1_dev, &ibus_ua) != 0)
+		return 0;
+
+	return (int)ibus_ua;
+}
+
+/* uV * uA == pW, so dividing by 1000000 lands on uW. */
+static int oplus_chg_input_power_uw(void)
+{
+	s64 power_uw = ((s64)oplus_chg_get_vbus_uv() *
+			(s64)oplus_chg_get_ibus_ua()) / 1000000;
+
+	if (power_uw > (s64)INT_MAX)
+		power_uw = (s64)INT_MAX;
+	else if (power_uw < (s64)INT_MIN)
+		power_uw = (s64)INT_MIN;
+
+	return (int)power_uw;
+}
+
 static int mt_usb_get_property(struct power_supply *psy,
 	enum power_supply_property psp, union power_supply_propval *val)
 {
 	int rc = 0;
 
 	switch (psp) {
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		val->intval = oplus_chg_get_vbus_uv();
+		break;
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		val->intval = oplus_chg_get_ibus_ua();
+		break;
+	case POWER_SUPPLY_PROP_POWER_NOW:
+		val->intval = oplus_chg_input_power_uw();
+		break;
 	case POWER_SUPPLY_PROP_TYPEC_CC_ORIENTATION:
 		if (pinfo != NULL && pinfo->tcpc != NULL) {
 			if (tcpm_inquire_typec_attach_state(pinfo->tcpc) != TYPEC_UNATTACHED) {
@@ -3363,6 +3431,10 @@ static enum power_supply_property mt_usb_properties[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 	POWER_SUPPLY_PROP_CURRENT_MAX,
 	POWER_SUPPLY_PROP_VOLTAGE_MAX,
+	/* Charger input rail, so power stays readable while plugged in. */
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_CURRENT_NOW,
+	POWER_SUPPLY_PROP_POWER_NOW,
 	POWER_SUPPLY_PROP_OTG_SWITCH,
 	POWER_SUPPLY_PROP_OTG_ONLINE,
 	POWER_SUPPLY_PROP_TYPEC_CC_ORIENTATION,

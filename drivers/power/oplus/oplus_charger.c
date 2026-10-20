@@ -604,12 +604,22 @@ static int oplus_chg_get_pmic_ibat_ua(u32 *ibat_ua)
 /*
  * Battery current in uA, instantaneous, for CURRENT_NOW/POWER_NOW.
  *
- * The MT6360 IBAT ADC is a single-shot IIO conversion: issuing a second read
- * straight after the first comes back as 0. Since CURRENT_NOW and POWER_NOW
- * are typically read back to back, a zero sample here is almost always a
- * stale conversion rather than a genuinely idle battery, so treat it as "no
- * data" and fall through to the fuel gauge. The gauge ops report mA.
+ * Neither source is reliable on its own. The MT6360 IBAT ADC is a single-shot
+ * IIO conversion, so the second of two back-to-back reads comes back as 0; and
+ * once charging completes the MTK fuel gauge gets disabled, after which the
+ * gauge path also returns 0. Because CURRENT_NOW and POWER_NOW are normally
+ * read one after the other, whichever was read second used to report 0 while
+ * the first reported a real value.
+ *
+ * Hold the last real sample for a few seconds so the two agree. A genuinely
+ * idle battery still settles to 0: the cache only survives while a fresh
+ * non-zero sample keeps arriving within the window.
  */
+#define OPLUS_CHG_CURRENT_HOLD_MS	3000
+
+static int oplus_chg_last_good_ua;
+static unsigned long oplus_chg_last_good_jiffies;
+
 static int oplus_chg_get_batt_current_ua(struct oplus_chg_chip *chip)
 {
 	u32 ibat_ua = 0;
@@ -623,13 +633,23 @@ static int oplus_chg_get_batt_current_ua(struct oplus_chg_chip *chip)
 		current_ua = (int)ibat_ua;
 		if (chip->charger_exist)
 			current_ua = 0 - current_ua;
-		return current_ua;
+	} else if (oplus_vooc_get_fastchg_started() == true) {
+		current_ua = oplus_gauge_get_prev_batt_current() * 1000;
+	} else {
+		current_ua = oplus_gauge_get_batt_current() * 1000;
 	}
 
-	if (oplus_vooc_get_fastchg_started() == true)
-		return oplus_gauge_get_prev_batt_current() * 1000;
+	if (current_ua != 0) {
+		oplus_chg_last_good_ua = current_ua;
+		oplus_chg_last_good_jiffies = jiffies;
+	} else if (oplus_chg_last_good_ua != 0 &&
+		   time_before(jiffies,
+			       oplus_chg_last_good_jiffies +
+			       msecs_to_jiffies(OPLUS_CHG_CURRENT_HOLD_MS))) {
+		current_ua = oplus_chg_last_good_ua;
+	}
 
-	return oplus_gauge_get_batt_current() * 1000;
+	return current_ua;
 }
 
 /* Battery current in uA, averaged, for POWER_AVG. */
