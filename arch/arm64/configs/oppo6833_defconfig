@@ -584,12 +584,19 @@ CONFIG_DM_DEFAULT_KEY=y
 #ifdef OPLUS_FEATURE_SECURITY_COMMON
 #Meilin.Zhou@BSP.Security.Basic, ModuleSig, Fix the MTK issue, resulting in the signed .ko not being correctly placed in the vendor.img. 2020-12-21
 CONFIG_MODULE_SIG=y
-CONFIG_MODULE_SIG_FORCE=y
+# CONFIG_MODULE_SIG_FORCE is not set
 CONFIG_MODULE_SIG_ALL=y
 CONFIG_MODULE_SIG_SHA512=y
 # Vendor modules in /vendor/lib/modules are signed with the OEM's build-time
-# key, not with the key this tree generates. Trust the OEM certificate so that
-# MODULE_SIG_FORCE can stay enabled (see certs/vendor_module_signing.pem).
+# key, not with the key this tree generates. Trust the OEM certificate so the
+# OEM modules keep verifying (see certs/vendor_module_signing.pem).
+#
+# MODULE_SIG_FORCE is deliberately left off. The platform's WiFi/BT stack
+# (wlan_drv_gen4m.ko, wmt_drv.ko, wmt_chrdev_wifi.ko) is a set of loadable
+# modules, and the private key matching vendor_module_signing.pem is not part
+# of this tree, so a modified module cannot be signed into the trusted
+# keychain. With FORCE off, signed OEM modules still verify normally and
+# locally built modules load (tainting the kernel) instead of being rejected.
 CONFIG_SYSTEM_TRUSTED_KEYRING=y
 CONFIG_SYSTEM_TRUSTED_KEYS="certs/vendor_module_signing.pem"
 #endif /*OPLUS_FEATURE_SECURITY_COMMON*/
