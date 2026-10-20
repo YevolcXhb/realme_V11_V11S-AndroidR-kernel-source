@@ -185,6 +185,15 @@ jobs:
           export MTK_ANDROID_WMT=y
           export MTK_ANDROID_EMI=y
 
+          # gen4m/Makefile reaches its WMT and conninfra headers through
+          # $(TOP)/vendor/mediatek/kernel_modules/connectivity, i.e. a sibling of
+          # the kernel checkout, which is how an AOSP tree lays it out. This repo
+          # keeps the same sources under <repo>/kernel_modules, so link that into
+          # place rather than editing the vendor Makefile.
+          mkdir -p "$PWD/../vendor/mediatek"
+          ln -sfn "$PWD/kernel_modules" "$PWD/../vendor/mediatek/kernel_modules"
+          test -r "$PWD/../vendor/mediatek/kernel_modules/connectivity/common/common_main/include/wmt_exp.h"
+
           make -j"$(nproc)" O=out ARCH=arm64 \
             CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
             CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" \
