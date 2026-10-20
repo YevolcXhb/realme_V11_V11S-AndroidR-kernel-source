@@ -5459,7 +5459,7 @@ static int battery_get_property(struct power_supply *psy,
 		}
 	}
 
-	return 0;
+	return rc;
 }
 
 static enum power_supply_property mt_ac_properties[] = {
@@ -5491,6 +5491,7 @@ static enum power_supply_property battery_properties[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_VOLTAGE_MIN,
 	POWER_SUPPLY_PROP_CURRENT_NOW,
+	POWER_SUPPLY_PROP_POWER_NOW,
 	POWER_SUPPLY_PROP_CHARGE_NOW,
 	POWER_SUPPLY_PROP_AUTHENTICATE,
 	POWER_SUPPLY_PROP_CHARGE_TIMEOUT,

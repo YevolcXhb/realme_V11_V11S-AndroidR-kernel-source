@@ -581,6 +581,26 @@ int oplus_battery_set_property(struct power_supply *psy,
 	return ret;
 }
 
+/*
+ * Read the instantaneous battery current straight from the PMIC IBAT ADC.
+ * Returns 0 and a value in uA on success, negative errno otherwise.
+ * This is the real ADC sample (MT6360 ADC_CHANNEL_IBAT), unlike the fuel
+ * gauge path which only exposes a filtered average.
+ */
+static int oplus_chg_get_pmic_ibat_ua(u32 *ibat_ua)
+{
+	struct charger_manager *info = NULL;
+
+	if (!g_charger_chip || !ibat_ua)
+		return -EINVAL;
+
+	info = g_charger_chip->chgic_mtk.oplus_info;
+	if (!info || !info->chg1_dev)
+		return -ENODEV;
+
+	return charger_dev_get_ibat(info->chg1_dev, ibat_ua);
+}
+
 int oplus_battery_get_property(struct power_supply *psy,
 		enum power_supply_property psp,
 		union power_supply_propval *val)
@@ -637,28 +657,78 @@ int oplus_battery_get_property(struct power_supply *psy,
 		break;
 #endif
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-#ifdef CONFIG_OPLUS_CHARGER_MTK
-		val->intval = chip->batt_volt;
-#else
+		/*
+		 * chip->batt_volt is in mV. The power_supply class expects
+		 * VOLTAGE_NOW in uV, so scale it on every platform. The MTK
+		 * branch used to pass mV straight through, which made
+		 * voltage_now read ~3800 instead of ~3800000.
+		 */
 		val->intval = chip->batt_volt * 1000;
-#endif
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MIN:
-
-#ifdef CONFIG_OPLUS_CHARGER_MTK
-		val->intval = chip->batt_volt_min;
-#else
+		/* chip->batt_volt_min is in mV, framework wants uV */
 		val->intval = chip->batt_volt_min * 1000;
-#endif
 		break;
-	case POWER_SUPPLY_PROP_CURRENT_NOW:
-		if (oplus_vooc_get_fastchg_started() == true) {
-			chip->icharging = oplus_gauge_get_prev_batt_current();
+	case POWER_SUPPLY_PROP_CURRENT_NOW: {
+		u32 ibat_ua = 0;
+		int current_ua;
+
+		if (oplus_chg_get_pmic_ibat_ua(&ibat_ua) == 0) {
+			/*
+			 * PMIC IBAT ADC reports magnitude only, so the charging
+			 * direction has to be applied here. Keep the existing
+			 * convention: charging is negative, discharging positive.
+			 */
+			current_ua = (int)ibat_ua;
+			if (chip->charger_exist)
+				current_ua = 0 - current_ua;
+		} else if (oplus_vooc_get_fastchg_started() == true) {
+			/* gauge ops report mA, framework wants uA */
+			current_ua = oplus_gauge_get_prev_batt_current() * 1000;
 		} else {
-			chip->icharging = oplus_gauge_get_batt_current();
+			/* gauge ops report mA, framework wants uA */
+			current_ua = oplus_gauge_get_batt_current() * 1000;
 		}
-		val->intval = chip->icharging;
+
+		/*
+		 * chip->icharging stays in the unit the rest of this driver
+		 * already assumes (mA): oplus_short.c compares it against
+		 * short_c_batt.*_ibatt_ma thresholds and oplus_debug_info.c
+		 * logs it as mA. Only the value handed to the framework is
+		 * converted to uA.
+		 */
+		val->intval = current_ua;
 		break;
+	}
+	case POWER_SUPPLY_PROP_POWER_NOW: {
+		u32 ibat_ua = 0;
+		int current_ua;
+		s64 power_uw;
+
+		if (oplus_chg_get_pmic_ibat_ua(&ibat_ua) == 0) {
+			current_ua = (int)ibat_ua;
+			if (chip->charger_exist)
+				current_ua = 0 - current_ua;
+		} else if (oplus_vooc_get_fastchg_started() == true) {
+			current_ua = oplus_gauge_get_prev_batt_current() * 1000;
+		} else {
+			current_ua = oplus_gauge_get_batt_current() * 1000;
+		}
+
+		/*
+		 * chip->batt_volt is mV, current_ua is uA.
+		 * mV * uA = nW, so divide by 1000 to land on the uW the
+		 * power_supply class expects for POWER_NOW.
+		 */
+		power_uw = ((s64)chip->batt_volt * (s64)current_ua) / 1000;
+		if (power_uw > (s64)INT_MAX)
+			power_uw = (s64)INT_MAX;
+		else if (power_uw < (s64)INT_MIN)
+			power_uw = (s64)INT_MIN;
+
+		val->intval = (int)power_uw;
+		break;
+	}
 	case POWER_SUPPLY_PROP_TEMP:
 		val->intval = chip->temperature - chip->offset_temp;
 		break;
