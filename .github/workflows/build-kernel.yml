@@ -175,9 +175,13 @@ jobs:
           # Mirrors what drivers/misc/mediatek/connectivity/Makefile exports for
           # CONSYS_6833: it matches neither the 6779/6873/6853 nor the 3967/6785
           # list, so WLAN_IP_SET falls through to 1 and MTK_COMBO_CHIP to CONNAC.
+          # CONFIG_MTK_COMBO_WIFI_HIF is mandatory -- gen4m/Makefile hard-errors
+          # with "Unsuppoted HIF=" when it is unset.
           export MTK_COMBO_CHIP=CONNAC
           export MTK_PLATFORM_ID=6833
+          export WLAN_CHIP_ID=6833
           export WIFI_IP_SET=1
+          export CONFIG_MTK_COMBO_WIFI_HIF=axi
           export MTK_ANDROID_WMT=y
           export MTK_ANDROID_EMI=y
 
@@ -191,13 +195,10 @@ jobs:
       - name: Report WiFi module
         if: always()
         run: |
-          echo "== module objects =="
-          find kernel_modules -name '*.ko' 2>/dev/null | sort || true
-          echo "== signing =="
-          for f in $(find kernel_modules -name 'wlan_drv_gen4m.ko' 2>/dev/null); do
-            echo "$f"
-            ls -l "$f"
-          done || true
+          echo "== .ko files anywhere =="
+          find . -name '*.ko' 2>/dev/null | sort || true
+          echo "== gen4m build products =="
+          find kernel_modules/connectivity/wlan -name '*.ko' -o -name '*.o' 2>/dev/null | head -5 || true
 
       - name: Upload WiFi module
         if: always()
@@ -208,6 +209,7 @@ jobs:
           if-no-files-found: warn
           path: |
             kernel_modules/**/*.ko
+            out/**/*.ko
             module.log
 
       - name: Check MODVERSIONS CRCs against baseline
