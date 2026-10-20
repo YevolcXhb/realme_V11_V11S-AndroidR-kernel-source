@@ -194,12 +194,37 @@ jobs:
           ln -sfn "$PWD/kernel_modules" "$PWD/../vendor/mediatek/kernel_modules"
           test -r "$PWD/../vendor/mediatek/kernel_modules/connectivity/common/common_main/include/wmt_exp.h"
 
-          make -j"$(nproc)" O=out ARCH=arm64 \
-            CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
-            CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" \
-            HOSTCC=gcc-9 HOSTCXX=g++-9 \
-            M="$PWD/kernel_modules/connectivity/wlan/core/gen4m" \
-            modules 2>&1 | tee module.log
+          # Build the three connectivity modules in dependency order. gen4m
+          # imports symbols that the other two export:
+          #   wmt_drv           -> mtk_wcn_wmt_*, mtk_wcn_consys_hw_*
+          #                        (common/common_main/core/wmt_exp.c,
+          #                         common/common_main/platform/mtk_wcn_consys_hw.c)
+          #   wmt_chrdev_wifi   -> wifi_reset_*, update_driver_loaded_status,
+          #                        register_set_p2p_mode_handler,
+          #                        get_low_latency_mode (wlan/adaptor/wmt_cdev_wifi.c)
+          # Building gen4m alone leaves all of those undefined at modpost and no
+          # .ko is produced, so feed each earlier Module.symvers forward through
+          # KBUILD_EXTRA_SYMBOLS.
+          EXTRA_SYMS=""
+          mk() {
+            local dir="$1"
+            echo "=== building $(basename "$dir") ==="
+            make -j"$(nproc)" O=out ARCH=arm64 \
+              CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
+              CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" \
+              HOSTCC=gcc-9 HOSTCXX=g++-9 \
+              M="$dir" KBUILD_EXTRA_SYMBOLS="$EXTRA_SYMS" modules
+            local sv
+            sv=$(find "$dir" -maxdepth 1 -name Module.symvers 2>/dev/null | head -1)
+            if [ -n "$sv" ]; then
+              EXTRA_SYMS="$EXTRA_SYMS $sv"
+              echo "collected $sv"
+            fi
+          }
+
+          mk "$PWD/kernel_modules/connectivity/common"            2>&1 | tee module.log
+          mk "$PWD/kernel_modules/connectivity/wlan/adaptor"      2>&1 | tee -a module.log
+          mk "$PWD/kernel_modules/connectivity/wlan/core/gen4m"   2>&1 | tee -a module.log
 
       - name: Report WiFi module
         if: always()
