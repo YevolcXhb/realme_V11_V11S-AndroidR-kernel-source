@@ -280,12 +280,22 @@ jobs:
           n_ref=$(wc -l < /tmp/crcs-ref.txt)
           echo "symbols with CRC: built=$n_cur baseline=$n_ref"
 
-          # A missing/renamed symbol is as dangerous as a changed one, so compare
-          # the line counts as well as the tables themselves.
-          if [ "$n_cur" != "$n_ref" ]; then
-            echo "::error::exported symbol count changed: built=$n_cur baseline=$n_ref"
-            diff -u /tmp/crcs-ref.txt /tmp/crcs.txt | head -40 || true
+          # Newly exported symbols are harmless on their own: a vendor .ko only
+          # cares about the CRCs of the symbols it imports.  A symbol that
+          # disappears is what actually breaks loading, so that is still fatal.
+          added=$(LC_ALL=C comm -13 /tmp/crcs-ref.txt /tmp/crcs.txt | wc -l)
+          removed=$(LC_ALL=C comm -23 /tmp/crcs-ref.txt /tmp/crcs.txt | wc -l)
+          echo "added=$added removed=$removed"
+
+          if [ "$removed" -gt 0 ]; then
+            echo "::error::$removed exported symbol(s) disappeared; vendor modules importing them cannot load."
+            LC_ALL=C comm -23 /tmp/crcs-ref.txt /tmp/crcs.txt | head -40
             exit 1
+          fi
+
+          if [ "$added" -gt 0 ]; then
+            echo "== $added newly exported symbol(s) =="
+            LC_ALL=C comm -13 /tmp/crcs-ref.txt /tmp/crcs.txt | head -100
           fi
 
           if ! diff -u /tmp/crcs-ref.txt /tmp/crcs.txt > /tmp/crc.diff; then
@@ -293,8 +303,8 @@ jobs:
             echo "::error::$changed exported symbol MODVERSIONS CRC(s) differ from the baseline."
             echo "::error::Vendor modules in /vendor/lib/modules/ will refuse to load (Exec format error)."
             echo "::error::A CONFIG in this change altered an exported struct layout. Revert it, or rebuild the vendor .ko too."
-            echo "== first 40 differences (baseline '-', built '+') =="
-            head -40 /tmp/crc.diff
+            echo "== complete list of differing CRCs (baseline '-', built '+') =="
+            grep -E '^[-+][^-+]' /tmp/crc.diff || true
             exit 1
           fi
 
