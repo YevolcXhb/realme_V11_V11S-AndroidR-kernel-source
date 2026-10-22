@@ -58,25 +58,25 @@ EXPORT_SYMBOL_GPL(nft_af_ipv6);
 
 static int nf_tables_ipv6_init_net(struct net *net)
 {
-	net->nft.ipv6 = kmalloc(sizeof(struct nft_af_info), GFP_KERNEL);
-	if (net->nft.ipv6 == NULL)
+	nft_netns(net)->ipv6 = kmalloc(sizeof(struct nft_af_info), GFP_KERNEL);
+	if (nft_netns(net)->ipv6 == NULL)
 		return -ENOMEM;
 
-	memcpy(net->nft.ipv6, &nft_af_ipv6, sizeof(nft_af_ipv6));
+	memcpy(nft_netns(net)->ipv6, &nft_af_ipv6, sizeof(nft_af_ipv6));
 
-	if (nft_register_afinfo(net, net->nft.ipv6) < 0)
+	if (nft_register_afinfo(net, nft_netns(net)->ipv6) < 0)
 		goto err;
 
 	return 0;
 err:
-	kfree(net->nft.ipv6);
+	kfree(nft_netns(net)->ipv6);
 	return -ENOMEM;
 }
 
 static void nf_tables_ipv6_exit_net(struct net *net)
 {
-	nft_unregister_afinfo(net, net->nft.ipv6);
-	kfree(net->nft.ipv6);
+	nft_unregister_afinfo(net, nft_netns(net)->ipv6);
+	kfree(nft_netns(net)->ipv6);
 }
 
 static struct pernet_operations nf_tables_ipv6_net_ops = {

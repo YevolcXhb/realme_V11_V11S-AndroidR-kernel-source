@@ -56,25 +56,25 @@ static struct nft_af_info nft_af_bridge __read_mostly = {
 
 static int nf_tables_bridge_init_net(struct net *net)
 {
-	net->nft.bridge = kmalloc(sizeof(struct nft_af_info), GFP_KERNEL);
-	if (net->nft.bridge == NULL)
+	nft_netns(net)->bridge = kmalloc(sizeof(struct nft_af_info), GFP_KERNEL);
+	if (nft_netns(net)->bridge == NULL)
 		return -ENOMEM;
 
-	memcpy(net->nft.bridge, &nft_af_bridge, sizeof(nft_af_bridge));
+	memcpy(nft_netns(net)->bridge, &nft_af_bridge, sizeof(nft_af_bridge));
 
-	if (nft_register_afinfo(net, net->nft.bridge) < 0)
+	if (nft_register_afinfo(net, nft_netns(net)->bridge) < 0)
 		goto err;
 
 	return 0;
 err:
-	kfree(net->nft.bridge);
+	kfree(nft_netns(net)->bridge);
 	return -ENOMEM;
 }
 
 static void nf_tables_bridge_exit_net(struct net *net)
 {
-	nft_unregister_afinfo(net, net->nft.bridge);
-	kfree(net->nft.bridge);
+	nft_unregister_afinfo(net, nft_netns(net)->bridge);
+	kfree(nft_netns(net)->bridge);
 }
 
 static struct pernet_operations nf_tables_bridge_net_ops = {

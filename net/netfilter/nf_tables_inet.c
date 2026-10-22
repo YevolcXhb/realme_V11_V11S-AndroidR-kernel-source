@@ -40,25 +40,25 @@ static struct nft_af_info nft_af_inet __read_mostly = {
 
 static int __net_init nf_tables_inet_init_net(struct net *net)
 {
-	net->nft.inet = kmalloc(sizeof(struct nft_af_info), GFP_KERNEL);
-	if (net->nft.inet == NULL)
+	nft_netns(net)->inet = kmalloc(sizeof(struct nft_af_info), GFP_KERNEL);
+	if (nft_netns(net)->inet == NULL)
 		return -ENOMEM;
-	memcpy(net->nft.inet, &nft_af_inet, sizeof(nft_af_inet));
+	memcpy(nft_netns(net)->inet, &nft_af_inet, sizeof(nft_af_inet));
 
-	if (nft_register_afinfo(net, net->nft.inet) < 0)
+	if (nft_register_afinfo(net, nft_netns(net)->inet) < 0)
 		goto err;
 
 	return 0;
 
 err:
-	kfree(net->nft.inet);
+	kfree(nft_netns(net)->inet);
 	return -ENOMEM;
 }
 
 static void __net_exit nf_tables_inet_exit_net(struct net *net)
 {
-	nft_unregister_afinfo(net, net->nft.inet);
-	kfree(net->nft.inet);
+	nft_unregister_afinfo(net, nft_netns(net)->inet);
+	kfree(nft_netns(net)->inet);
 }
 
 static struct pernet_operations nf_tables_inet_net_ops = {

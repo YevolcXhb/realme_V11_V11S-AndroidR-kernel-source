@@ -49,25 +49,25 @@ static struct nft_af_info nft_af_netdev __read_mostly = {
 
 static int nf_tables_netdev_init_net(struct net *net)
 {
-	net->nft.netdev = kmalloc(sizeof(struct nft_af_info), GFP_KERNEL);
-	if (net->nft.netdev == NULL)
+	nft_netns(net)->netdev = kmalloc(sizeof(struct nft_af_info), GFP_KERNEL);
+	if (nft_netns(net)->netdev == NULL)
 		return -ENOMEM;
 
-	memcpy(net->nft.netdev, &nft_af_netdev, sizeof(nft_af_netdev));
+	memcpy(nft_netns(net)->netdev, &nft_af_netdev, sizeof(nft_af_netdev));
 
-	if (nft_register_afinfo(net, net->nft.netdev) < 0)
+	if (nft_register_afinfo(net, nft_netns(net)->netdev) < 0)
 		goto err;
 
 	return 0;
 err:
-	kfree(net->nft.netdev);
+	kfree(nft_netns(net)->netdev);
 	return -ENOMEM;
 }
 
 static void nf_tables_netdev_exit_net(struct net *net)
 {
-	nft_unregister_afinfo(net, net->nft.netdev);
-	kfree(net->nft.netdev);
+	nft_unregister_afinfo(net, nft_netns(net)->netdev);
+	kfree(nft_netns(net)->netdev);
 }
 
 static struct pernet_operations nf_tables_netdev_net_ops = {
@@ -120,7 +120,7 @@ static int nf_tables_netdev_event(struct notifier_block *this,
 		return NOTIFY_DONE;
 
 	nfnl_lock(NFNL_SUBSYS_NFTABLES);
-	list_for_each_entry(afi, &dev_net(dev)->nft.af_info, list) {
+	list_for_each_entry(afi, &nft_netns(dev_net(dev))->af_info, list) {
 		ctx.afi = afi;
 		if (afi->family != NFPROTO_NETDEV)
 			continue;

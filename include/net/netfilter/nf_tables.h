@@ -10,8 +10,31 @@
 #include <linux/netfilter/nf_tables.h>
 #include <linux/u64_stats_sync.h>
 #include <net/netlink.h>
+#include <net/netns/generic.h>
+#include <net/netns/nftables.h>
 
 #define NFT_JUMP_STACK_SIZE	16
+
+/*
+ * nf_tables keeps its per-netns state (the address family registry, the pending
+ * transaction list, base_seq and gencursor) in a private struct netns_nftables.
+ *
+ * It used to be a plain member of struct net, which meant that merely turning
+ * nf_tables on inserted 88 bytes in the middle of struct net and shifted the
+ * MODVERSIONS CRC of every exported symbol that takes a struct net *.  On this
+ * device that is fatal: /vendor/lib/modules/ ships prebuilt modules (wlan_drv_gen4m
+ * and friends) whose CRCs were generated against the OEM struct net, and insmod
+ * rejects them with "disagrees about version of symbol module_layout".
+ *
+ * Allocating it through the generic per-net pointer array instead keeps struct
+ * net byte-identical to the OEM layout, so the vendor modules keep loading.
+ */
+extern unsigned int nf_tables_net_id;
+
+static inline struct netns_nftables *nft_netns(const struct net *net)
+{
+	return (struct netns_nftables *)net_generic(net, nf_tables_net_id);
+}
 
 struct nft_pktinfo {
 	struct sk_buff			*skb;
@@ -1161,7 +1184,7 @@ void nft_trace_notify(struct nft_traceinfo *info);
  */
 static inline unsigned int nft_gencursor_next(const struct net *net)
 {
-	return net->nft.gencursor + 1 == 1 ? 1 : 0;
+	return nft_netns(net)->gencursor + 1 == 1 ? 1 : 0;
 }
 
 static inline u8 nft_genmask_next(const struct net *net)
@@ -1172,7 +1195,7 @@ static inline u8 nft_genmask_next(const struct net *net)
 static inline u8 nft_genmask_cur(const struct net *net)
 {
 	/* Use ACCESS_ONCE() to prevent refetching the value for atomicity */
-	return 1 << ACCESS_ONCE(net->nft.gencursor);
+	return 1 << ACCESS_ONCE(nft_netns(net)->gencursor);
 }
 
 #define NFT_GENMASK_ANY		((1 << 0) | (1 << 1))

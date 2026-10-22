@@ -25,6 +25,10 @@
 static LIST_HEAD(nf_tables_expressions);
 static LIST_HEAD(nf_tables_objects);
 
+/* Index into struct net's generic pointer array for our private per-netns data. */
+unsigned int nf_tables_net_id __read_mostly;
+EXPORT_SYMBOL_GPL(nf_tables_net_id);
+
 /**
  *	nft_register_afinfo - register nf_tables address family info
  *
@@ -37,7 +41,7 @@ int nft_register_afinfo(struct net *net, struct nft_af_info *afi)
 {
 	INIT_LIST_HEAD(&afi->tables);
 	nfnl_lock(NFNL_SUBSYS_NFTABLES);
-	list_add_tail_rcu(&afi->list, &net->nft.af_info);
+	list_add_tail_rcu(&afi->list, &nft_netns(net)->af_info);
 	nfnl_unlock(NFNL_SUBSYS_NFTABLES);
 	return 0;
 }
@@ -65,7 +69,7 @@ static struct nft_af_info *nft_afinfo_lookup(struct net *net, int family)
 {
 	struct nft_af_info *afi;
 
-	list_for_each_entry(afi, &net->nft.af_info, list) {
+	list_for_each_entry(afi, &nft_netns(net)->af_info, list) {
 		if (afi->family == family)
 			return afi;
 	}
@@ -175,7 +179,7 @@ static int nft_trans_table_add(struct nft_ctx *ctx, int msg_type)
 	if (msg_type == NFT_MSG_NEWTABLE)
 		nft_activate_next(ctx->net, ctx->table);
 
-	list_add_tail(&trans->list, &ctx->net->nft.commit_list);
+	list_add_tail(&trans->list, &nft_netns(ctx->net)->commit_list);
 	return 0;
 }
 
@@ -202,7 +206,7 @@ static int nft_trans_chain_add(struct nft_ctx *ctx, int msg_type)
 	if (msg_type == NFT_MSG_NEWCHAIN)
 		nft_activate_next(ctx->net, ctx->chain);
 
-	list_add_tail(&trans->list, &ctx->net->nft.commit_list);
+	list_add_tail(&trans->list, &nft_netns(ctx->net)->commit_list);
 	return 0;
 }
 
@@ -286,7 +290,7 @@ static struct nft_trans *nft_trans_rule_add(struct nft_ctx *ctx, int msg_type,
 			ntohl(nla_get_be32(ctx->nla[NFTA_RULE_ID]));
 	}
 	nft_trans_rule(trans) = rule;
-	list_add_tail(&trans->list, &ctx->net->nft.commit_list);
+	list_add_tail(&trans->list, &nft_netns(ctx->net)->commit_list);
 
 	return trans;
 }
@@ -341,7 +345,7 @@ static int nft_trans_set_add(struct nft_ctx *ctx, int msg_type,
 		nft_activate_next(ctx->net, set);
 	}
 	nft_trans_set(trans) = set;
-	list_add_tail(&trans->list, &ctx->net->nft.commit_list);
+	list_add_tail(&trans->list, &nft_netns(ctx->net)->commit_list);
 
 	return 0;
 }
@@ -373,7 +377,7 @@ static int nft_trans_obj_add(struct nft_ctx *ctx, int msg_type,
 		nft_activate_next(ctx->net, obj);
 
 	nft_trans_obj(trans) = obj;
-	list_add_tail(&trans->list, &ctx->net->nft.commit_list);
+	list_add_tail(&trans->list, &nft_netns(ctx->net)->commit_list);
 
 	return 0;
 }
@@ -491,7 +495,7 @@ static int nf_tables_fill_table_info(struct sk_buff *skb, struct net *net,
 	nfmsg = nlmsg_data(nlh);
 	nfmsg->nfgen_family	= family;
 	nfmsg->version		= NFNETLINK_V0;
-	nfmsg->res_id		= htons(net->nft.base_seq & 0xffff);
+	nfmsg->res_id		= htons(nft_netns(net)->base_seq & 0xffff);
 
 	if (nla_put_string(skb, NFTA_TABLE_NAME, table->name) ||
 	    nla_put_be32(skb, NFTA_TABLE_FLAGS, htonl(table->flags)) ||
@@ -544,9 +548,9 @@ static int nf_tables_dump_tables(struct sk_buff *skb,
 	int family = nfmsg->nfgen_family;
 
 	rcu_read_lock();
-	cb->seq = net->nft.base_seq;
+	cb->seq = nft_netns(net)->base_seq;
 
-	list_for_each_entry_rcu(afi, &net->nft.af_info, list) {
+	list_for_each_entry_rcu(afi, &nft_netns(net)->af_info, list) {
 		if (family != NFPROTO_UNSPEC && family != afi->family)
 			continue;
 
@@ -714,7 +718,7 @@ static int nf_tables_updtable(struct nft_ctx *ctx)
 		goto err;
 
 	nft_trans_table_update(trans) = true;
-	list_add_tail(&trans->list, &ctx->net->nft.commit_list);
+	list_add_tail(&trans->list, &nft_netns(ctx->net)->commit_list);
 	return 0;
 err:
 	nft_trans_destroy(trans);
@@ -856,7 +860,7 @@ static int nft_flush(struct nft_ctx *ctx, int family)
 	const struct nlattr * const *nla = ctx->nla;
 	int err = 0;
 
-	list_for_each_entry(afi, &ctx->net->nft.af_info, list) {
+	list_for_each_entry(afi, &nft_netns(ctx->net)->af_info, list) {
 		if (family != AF_UNSPEC && afi->family != family)
 			continue;
 
@@ -1058,7 +1062,7 @@ static int nf_tables_fill_chain_info(struct sk_buff *skb, struct net *net,
 	nfmsg = nlmsg_data(nlh);
 	nfmsg->nfgen_family	= family;
 	nfmsg->version		= NFNETLINK_V0;
-	nfmsg->res_id		= htons(net->nft.base_seq & 0xffff);
+	nfmsg->res_id		= htons(nft_netns(net)->base_seq & 0xffff);
 
 	if (nla_put_string(skb, NFTA_CHAIN_TABLE, table->name))
 		goto nla_put_failure;
@@ -1147,9 +1151,9 @@ static int nf_tables_dump_chains(struct sk_buff *skb,
 	int family = nfmsg->nfgen_family;
 
 	rcu_read_lock();
-	cb->seq = net->nft.base_seq;
+	cb->seq = nft_netns(net)->base_seq;
 
-	list_for_each_entry_rcu(afi, &net->nft.af_info, list) {
+	list_for_each_entry_rcu(afi, &nft_netns(net)->af_info, list) {
 		if (family != NFPROTO_UNSPEC && family != afi->family)
 			continue;
 
@@ -1570,7 +1574,7 @@ static int nf_tables_updchain(struct nft_ctx *ctx, u8 genmask, u8 policy,
 			goto err;
 
 		err = -EEXIST;
-		list_for_each_entry(tmp, &ctx->net->nft.commit_list, list) {
+		list_for_each_entry(tmp, &nft_netns(ctx->net)->commit_list, list) {
 			if (tmp->msg_type == NFT_MSG_NEWCHAIN &&
 			    tmp->ctx.table == table &&
 			    nft_trans_chain_update(tmp) &&
@@ -1583,7 +1587,7 @@ static int nf_tables_updchain(struct nft_ctx *ctx, u8 genmask, u8 policy,
 
 		nft_trans_chain_name(trans) = name;
 	}
-	list_add_tail(&trans->list, &ctx->net->nft.commit_list);
+	list_add_tail(&trans->list, &nft_netns(ctx->net)->commit_list);
 
 	return 0;
 err:
@@ -2040,7 +2044,7 @@ static int nf_tables_fill_rule_info(struct sk_buff *skb, struct net *net,
 	nfmsg = nlmsg_data(nlh);
 	nfmsg->nfgen_family	= family;
 	nfmsg->version		= NFNETLINK_V0;
-	nfmsg->res_id		= htons(net->nft.base_seq & 0xffff);
+	nfmsg->res_id		= htons(nft_netns(net)->base_seq & 0xffff);
 
 	if (nla_put_string(skb, NFTA_RULE_TABLE, table->name))
 		goto nla_put_failure;
@@ -2130,9 +2134,9 @@ static int nf_tables_dump_rules(struct sk_buff *skb,
 	int family = nfmsg->nfgen_family;
 
 	rcu_read_lock();
-	cb->seq = net->nft.base_seq;
+	cb->seq = nft_netns(net)->base_seq;
 
-	list_for_each_entry_rcu(afi, &net->nft.af_info, list) {
+	list_for_each_entry_rcu(afi, &nft_netns(net)->af_info, list) {
 		if (family != NFPROTO_UNSPEC && family != afi->family)
 			continue;
 
@@ -2471,7 +2475,7 @@ static struct nft_rule *nft_rule_lookup_byid(const struct net *net,
 	u32 id = ntohl(nla_get_be32(nla));
 	struct nft_trans *trans;
 
-	list_for_each_entry(trans, &net->nft.commit_list, list) {
+	list_for_each_entry(trans, &nft_netns(net)->commit_list, list) {
 		struct nft_rule *rule = nft_trans_rule(trans);
 
 		if (trans->msg_type == NFT_MSG_NEWRULE &&
@@ -2741,7 +2745,7 @@ static struct nft_set *nf_tables_set_lookup_byid(const struct net *net,
 	struct nft_trans *trans;
 	u32 id = ntohl(nla_get_be32(nla));
 
-	list_for_each_entry(trans, &net->nft.commit_list, list) {
+	list_for_each_entry(trans, &nft_netns(net)->commit_list, list) {
 		if (trans->msg_type == NFT_MSG_NEWSET) {
 			struct nft_set *set = nft_trans_set(trans);
 
@@ -2844,7 +2848,7 @@ static int nf_tables_fill_set(struct sk_buff *skb, const struct nft_ctx *ctx,
 	nfmsg = nlmsg_data(nlh);
 	nfmsg->nfgen_family	= ctx->afi->family;
 	nfmsg->version		= NFNETLINK_V0;
-	nfmsg->res_id		= htons(ctx->net->nft.base_seq & 0xffff);
+	nfmsg->res_id		= htons(nft_netns(ctx->net)->base_seq & 0xffff);
 
 	if (nla_put_string(skb, NFTA_SET_TABLE, ctx->table->name))
 		goto nla_put_failure;
@@ -2944,9 +2948,9 @@ static int nf_tables_dump_sets(struct sk_buff *skb, struct netlink_callback *cb)
 		return skb->len;
 
 	rcu_read_lock();
-	cb->seq = net->nft.base_seq;
+	cb->seq = nft_netns(net)->base_seq;
 
-	list_for_each_entry_rcu(afi, &net->nft.af_info, list) {
+	list_for_each_entry_rcu(afi, &nft_netns(net)->af_info, list) {
 		if (ctx->afi && ctx->afi != afi)
 			continue;
 
@@ -3598,7 +3602,7 @@ static int nf_tables_dump_set(struct sk_buff *skb, struct netlink_callback *cb)
 	int event;
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(afi, &net->nft.af_info, list) {
+	list_for_each_entry_rcu(afi, &nft_netns(net)->af_info, list) {
 		if (afi != dump_ctx->ctx.afi)
 			continue;
 
@@ -3634,7 +3638,7 @@ static int nf_tables_dump_set(struct sk_buff *skb, struct netlink_callback *cb)
 	nfmsg = nlmsg_data(nlh);
 	nfmsg->nfgen_family = afi->family;
 	nfmsg->version      = NFNETLINK_V0;
-	nfmsg->res_id	    = htons(net->nft.base_seq & 0xffff);
+	nfmsg->res_id	    = htons(nft_netns(net)->base_seq & 0xffff);
 
 	if (nla_put_string(skb, NFTA_SET_ELEM_LIST_TABLE, table->name))
 		goto nla_put_failure;
@@ -3736,7 +3740,7 @@ static int nf_tables_fill_setelem_info(struct sk_buff *skb,
 	nfmsg = nlmsg_data(nlh);
 	nfmsg->nfgen_family	= ctx->afi->family;
 	nfmsg->version		= NFNETLINK_V0;
-	nfmsg->res_id		= htons(ctx->net->nft.base_seq & 0xffff);
+	nfmsg->res_id		= htons(nft_netns(ctx->net)->base_seq & 0xffff);
 
 	if (nla_put_string(skb, NFTA_SET_TABLE, ctx->table->name))
 		goto nla_put_failure;
@@ -4069,7 +4073,7 @@ static int nft_add_set_elem(struct nft_ctx *ctx, struct nft_set *set,
 	}
 
 	nft_trans_elem(trans) = elem;
-	list_add_tail(&trans->list, &ctx->net->nft.commit_list);
+	list_add_tail(&trans->list, &nft_netns(ctx->net)->commit_list);
 	return 0;
 
 err6:
@@ -4245,7 +4249,7 @@ static int nft_del_setelem(struct nft_ctx *ctx, struct nft_set *set,
 	nft_set_elem_deactivate(ctx->net, set, &elem);
 
 	nft_trans_elem(trans) = elem;
-	list_add_tail(&trans->list, &ctx->net->nft.commit_list);
+	list_add_tail(&trans->list, &nft_netns(ctx->net)->commit_list);
 	return 0;
 
 err4:
@@ -4280,7 +4284,7 @@ static int nft_flush_set(const struct nft_ctx *ctx,
 	nft_set_elem_deactivate(ctx->net, set, elem);
 	nft_trans_elem_set(trans) = set;
 	nft_trans_elem(trans) = *elem;
-	list_add_tail(&trans->list, &ctx->net->nft.commit_list);
+	list_add_tail(&trans->list, &nft_netns(ctx->net)->commit_list);
 
 	return 0;
 err1:
@@ -4606,7 +4610,7 @@ static int nf_tables_fill_obj_info(struct sk_buff *skb, struct net *net,
 	nfmsg = nlmsg_data(nlh);
 	nfmsg->nfgen_family	= family;
 	nfmsg->version		= NFNETLINK_V0;
-	nfmsg->res_id		= htons(net->nft.base_seq & 0xffff);
+	nfmsg->res_id		= htons(nft_netns(net)->base_seq & 0xffff);
 
 	if (nla_put_string(skb, NFTA_OBJ_TABLE, table->name) ||
 	    nla_put_string(skb, NFTA_OBJ_NAME, obj->name) ||
@@ -4644,9 +4648,9 @@ static int nf_tables_dump_obj(struct sk_buff *skb, struct netlink_callback *cb)
 		reset = true;
 
 	rcu_read_lock();
-	cb->seq = net->nft.base_seq;
+	cb->seq = nft_netns(net)->base_seq;
 
-	list_for_each_entry_rcu(afi, &net->nft.af_info, list) {
+	list_for_each_entry_rcu(afi, &nft_netns(net)->af_info, list) {
 		if (family != NFPROTO_UNSPEC && family != afi->family)
 			continue;
 
@@ -4891,9 +4895,9 @@ static int nf_tables_fill_gen_info(struct sk_buff *skb, struct net *net,
 	nfmsg = nlmsg_data(nlh);
 	nfmsg->nfgen_family	= AF_UNSPEC;
 	nfmsg->version		= NFNETLINK_V0;
-	nfmsg->res_id		= htons(net->nft.base_seq & 0xffff);
+	nfmsg->res_id		= htons(nft_netns(net)->base_seq & 0xffff);
 
-	if (nla_put_be32(skb, NFTA_GEN_ID, htonl(net->nft.base_seq)) ||
+	if (nla_put_be32(skb, NFTA_GEN_ID, htonl(nft_netns(net)->base_seq)) ||
 	    nla_put_be32(skb, NFTA_GEN_PROC_PID, htonl(task_pid_nr(current))) ||
 	    nla_put_string(skb, NFTA_GEN_PROC_NAME, get_task_comm(buf, current)))
 		goto nla_put_failure;
@@ -5116,17 +5120,17 @@ static int nf_tables_commit(struct net *net, struct sk_buff *skb)
 	struct nft_trans_elem *te;
 
 	/* Bump generation counter, invalidate any dump in progress */
-	while (++net->nft.base_seq == 0);
+	while (++nft_netns(net)->base_seq == 0);
 
 	/* A new generation has just started */
-	net->nft.gencursor = nft_gencursor_next(net);
+	nft_netns(net)->gencursor = nft_gencursor_next(net);
 
 	/* Make sure all packets have left the previous generation before
 	 * purging old rules.
 	 */
 	synchronize_rcu();
 
-	list_for_each_entry_safe(trans, next, &net->nft.commit_list, list) {
+	list_for_each_entry_safe(trans, next, &nft_netns(net)->commit_list, list) {
 		switch (trans->msg_type) {
 		case NFT_MSG_NEWTABLE:
 			if (nft_trans_table_update(trans)) {
@@ -5231,7 +5235,7 @@ static int nf_tables_commit(struct net *net, struct sk_buff *skb)
 
 	synchronize_rcu();
 
-	list_for_each_entry_safe(trans, next, &net->nft.commit_list, list) {
+	list_for_each_entry_safe(trans, next, &nft_netns(net)->commit_list, list) {
 		list_del(&trans->list);
 		nf_tables_commit_release(trans);
 	}
@@ -5272,7 +5276,7 @@ static int nf_tables_abort(struct net *net, struct sk_buff *skb)
 	struct nft_trans *trans, *next;
 	struct nft_trans_elem *te;
 
-	list_for_each_entry_safe_reverse(trans, next, &net->nft.commit_list,
+	list_for_each_entry_safe_reverse(trans, next, &nft_netns(net)->commit_list,
 					 list) {
 		switch (trans->msg_type) {
 		case NFT_MSG_NEWTABLE:
@@ -5361,7 +5365,7 @@ static int nf_tables_abort(struct net *net, struct sk_buff *skb)
 	synchronize_rcu();
 
 	list_for_each_entry_safe_reverse(trans, next,
-					 &net->nft.commit_list, list) {
+					 &nft_netns(net)->commit_list, list) {
 		list_del(&trans->list);
 		nf_tables_abort_release(trans);
 	}
@@ -5371,7 +5375,7 @@ static int nf_tables_abort(struct net *net, struct sk_buff *skb)
 
 static bool nf_tables_valid_genid(struct net *net, u32 genid)
 {
-	return net->nft.base_seq == genid;
+	return nft_netns(net)->base_seq == genid;
 }
 
 static const struct nfnetlink_subsystem nf_tables_subsys = {
@@ -5876,9 +5880,9 @@ EXPORT_SYMBOL_GPL(nft_data_dump);
 
 static int __net_init nf_tables_init_net(struct net *net)
 {
-	INIT_LIST_HEAD(&net->nft.af_info);
-	INIT_LIST_HEAD(&net->nft.commit_list);
-	net->nft.base_seq = 1;
+	INIT_LIST_HEAD(&nft_netns(net)->af_info);
+	INIT_LIST_HEAD(&nft_netns(net)->commit_list);
+	nft_netns(net)->base_seq = 1;
 	return 0;
 }
 
@@ -5952,6 +5956,8 @@ static void __nft_release_afinfo(struct net *net, struct nft_af_info *afi)
 
 static struct pernet_operations nf_tables_net_ops = {
 	.init	= nf_tables_init_net,
+	.id	= &nf_tables_net_id,
+	.size	= sizeof(struct netns_nftables),
 };
 
 static int __init nf_tables_module_init(void)
