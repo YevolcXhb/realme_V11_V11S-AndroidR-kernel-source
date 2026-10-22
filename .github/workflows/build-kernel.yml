@@ -231,6 +231,7 @@ jobs:
 
       - name: Upload WiFi module
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: wifimod-${{ github.sha }}
@@ -299,8 +300,10 @@ jobs:
 
           echo "OK: all $n_cur exported CRCs match the vendor-compatible baseline."
 
-      - name: Upload kernel images
+      - name: Upload kernel images (artifact)
         if: success()
+        continue-on-error: true
+        id: upload-artifact
         uses: actions/upload-artifact@v4
         with:
           name: kernel-${{ github.event.inputs.defconfig || 'oppo6833' }}-${{ github.sha }}
@@ -314,8 +317,46 @@ jobs:
             out/vmlinux
             out/System.map
 
+      # Artifact upload is capped at the account-wide storage quota and that
+      # quota is re-counted on a multi-hour cycle, so a deleted artifact does
+      # not free space immediately and upload-artifact fails with
+      # "Artifact storage quota has been hit".  The Release assets below have a
+      # separate allowance and are the path that always produces a usable file.
+      - name: Package kernel images
+        if: success()
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp out/arch/arm64/boot/Image.gz-dtb dist/
+          cp out/arch/arm64/boot/Image dist/
+          cp out/System.map dist/
+          cp build.log dist/
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          ls -la dist
+
+      - name: Publish kernel images as a Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.sha }}
+          name: realme V11 kernel ${{ github.event.inputs.defconfig || 'oppo6833' }} ${{ github.sha }}
+          body: |
+            Automated build of `${{ github.sha }}` (${{ github.event.inputs.defconfig || 'oppo6833' }}_defconfig).
+
+            Artifacts in this release:
+            - `Image.gz-dtb` - kernel + appended MT6833 device tree, the file to repack into boot.img
+            - `Image` - raw arm64 kernel
+            - `System.map` - symbol map for the exact build
+            - `build.log` - full compile log
+            - `SHA256SUMS.txt` - checksums
+          files: dist/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload build log
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: build-log-${{ github.sha }}
