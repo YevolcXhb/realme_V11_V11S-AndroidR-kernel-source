@@ -772,3 +772,33 @@ CONFIG_NETFILTER_XT_TARGET_DSCP=y
 CONFIG_NETFILTER_XT_TARGET_HL=y
 CONFIG_NETFILTER_XT_TARGET_RATEEST=y
 CONFIG_NETFILTER_XT_TARGET_TCPOPTSTRIP=y
+
+#
+# Per-family nftables chain types and NAT variants
+#
+# Kconfig splits the nft logic per address family, so the 25 generic NFT_*
+# options above only build the family-independent expressions.  Everything a
+# real firewall ruleset actually needs is a separate family option that
+# net/netfilter/Kconfig never selects:
+#
+#   NFT_CHAIN_NAT_IPV4   the `type nat` base chain (nat table equivalent)
+#   NFT_MASQ_IPV4        the masquerade expression, ipv4 eval path
+#   NFT_REDIR_IPV4       the redirect expression, ipv4 eval path
+#   NFT_CHAIN_ROUTE_IPV4 the `type route` chain (mangle-then-reroute)
+#   NF_LOG_IPV4          the syslog backend the `log` expression binds to
+#
+# Without these, `nft add chain ... type nat` returns ENOENT and a rule using
+# `log` returns ENOENT from nf_logger_find_get(), even though the expressions
+# themselves are compiled in.
+#
+CONFIG_NFT_CHAIN_NAT_IPV4=y
+CONFIG_NFT_CHAIN_ROUTE_IPV4=y
+CONFIG_NFT_MASQ_IPV4=y
+CONFIG_NFT_REDIR_IPV4=y
+CONFIG_NFT_REJECT_IPV4=y
+CONFIG_NFT_CHAIN_NAT_IPV6=y
+CONFIG_NFT_MASQ_IPV6=y
+CONFIG_NFT_REDIR_IPV6=y
+CONFIG_NF_LOG_COMMON=y
+CONFIG_NF_LOG_IPV4=y
+CONFIG_NF_LOG_IPV6=y
