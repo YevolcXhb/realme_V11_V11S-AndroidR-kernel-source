@@ -44,7 +44,10 @@ on:
       - 'scripts/**'
 
 permissions:
-  contents: read
+  # Publishing the kernel images as a Release needs tag/create permission.
+  # artifact storage is quota-limited account-wide and keeps failing, so the
+  # Release is the only reliable delivery path.
+  contents: write
 
 env:
   ARCH: arm64
