@@ -280,35 +280,72 @@ jobs:
           n_ref=$(wc -l < /tmp/crcs-ref.txt)
           echo "symbols with CRC: built=$n_cur baseline=$n_ref"
 
-          # Newly exported symbols are harmless on their own: a vendor .ko only
-          # cares about the CRCs of the symbols it imports.  A symbol that
-          # disappears is what actually breaks loading, so that is still fatal.
-          added=$(LC_ALL=C comm -13 /tmp/crcs-ref.txt /tmp/crcs.txt | wc -l)
-          removed=$(LC_ALL=C comm -23 /tmp/crcs-ref.txt /tmp/crcs.txt | wc -l)
-          echo "added=$added removed=$removed"
+          # Diagnose the raw shape before comparing, so a format mismatch can
+          # never masquerade as a CRC regression.
+          echo "== built sample =="
+          head -3 /tmp/crcs.txt | cat -A | sed 's/\$$//'
+          echo "== baseline sample =="
+          head -3 /tmp/crcs-ref.txt | cat -A | sed 's/\$$//'
+          echo "== built __alloc_skb / __check_sticky / ___pskb_trim =="
+          grep -E '^(__alloc_skb|__check_sticky|___pskb_trim) ' /tmp/crcs.txt || true
+          echo "== baseline same three =="
+          grep -E '^(__alloc_skb|__check_sticky|___pskb_trim) ' /tmp/crcs-ref.txt || true
 
-          if [ "$removed" -gt 0 ]; then
-            echo "::error::$removed exported symbol(s) disappeared; vendor modules importing them cannot load."
-            LC_ALL=C comm -23 /tmp/crcs-ref.txt /tmp/crcs.txt | head -40
+          # Compare by symbol NAME, never by the whole line: a symbol is only a
+          # real regression when its name vanished or its CRC changed.
+          LC_ALL=C join -j 1 -o 1.1,1.2,2.2 /tmp/crcs-ref.txt /tmp/crcs.txt > /tmp/crc.join
+          LC_ALL=C join -v 1 -j 1 /tmp/crcs-ref.txt /tmp/crcs.txt > /tmp/crc.gone
+          LC_ALL=C join -v 2 -j 1 /tmp/crcs-ref.txt /tmp/crcs.txt > /tmp/crc.new
+
+          gone=$(wc -l < /tmp/crc.gone)
+          new=$(wc -l < /tmp/crc.new)
+          changed=$(awk '$2 != $3' /tmp/crc.join | wc -l)
+          echo "gone=$gone new=$new crc_changed=$changed"
+          {
+            echo "### MODVERSIONS report"
+            echo ""
+            echo "| metric | count |"
+            echo "|---|---|"
+            echo "| symbols built | $n_cur |"
+            echo "| symbols baseline | $n_ref |"
+            echo "| disappeared | $gone |"
+            echo "| newly exported | $new |"
+            echo "| CRC changed | $changed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$gone" -gt 0 ]; then
+            echo "::error::$gone exported symbol(s) disappeared; vendor modules importing them cannot load."
+            cat /tmp/crc.gone
             exit 1
           fi
 
-          if [ "$added" -gt 0 ]; then
-            echo "== $added newly exported symbol(s) =="
-            LC_ALL=C comm -13 /tmp/crcs-ref.txt /tmp/crcs.txt | head -100
-          fi
-
-          if ! diff -u /tmp/crcs-ref.txt /tmp/crcs.txt > /tmp/crc.diff; then
-            changed=$(grep -c '^-[^-]' /tmp/crc.diff || true)
+          if [ "$changed" -gt 0 ]; then
             echo "::error::$changed exported symbol MODVERSIONS CRC(s) differ from the baseline."
             echo "::error::Vendor modules in /vendor/lib/modules/ will refuse to load (Exec format error)."
-            echo "::error::A CONFIG in this change altered an exported struct layout. Revert it, or rebuild the vendor .ko too."
-            echo "== complete list of differing CRCs (baseline '-', built '+') =="
-            grep -E '^[-+][^-+]' /tmp/crc.diff || true
+            awk '$2 != $3' /tmp/crc.join | sort -k1,1 > /tmp/crc.changed
+            echo "== CRC changed (name baseline built) =="
+            cat /tmp/crc.changed
+            echo "== how many changed symbols per subsystem prefix =="
+            awk -F' ' '{ n=split($1, p, "_"); print p[1]"_"p[2] }' /tmp/crc.changed \
+              | sort | uniq -c | sort -rn | head -30
+            {
+              echo ""
+              echo "#### CRC changed (name / baseline / built)"
+              echo '```'
+              cat /tmp/crc.changed
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
-          echo "OK: all $n_cur exported CRCs match the vendor-compatible baseline."
+          echo "OK: all $n_cur exported CRCs match the vendor-compatible baseline (plus $new new export(s))."
+          {
+            echo ""
+            echo "Newly exported symbols are additive only and cannot break a vendor .ko:"
+            echo '```'
+            cat /tmp/crc.new
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload kernel images (artifact)
         if: success()
