@@ -30,6 +30,14 @@ on:
         options:
           - oppo6833
           - oppo6833_debug
+      server_profile:
+        description: Server DVFS defaults and USB Ethernet profile
+        required: true
+        default: server
+        type: choice
+        options:
+          - server
+          - stock
   push:
     branches: [main, master]
     paths:
@@ -157,12 +165,76 @@ jobs:
           echo "== defconfig: ${DEFCONFIG} =="
           make -j"$(nproc)" "${mkargs[@]}" "${DEFCONFIG}_defconfig" 2>&1 | tee build.log
 
+          PROFILE="${{ github.event.inputs.server_profile || 'server' }}"
+          if [ "$PROFILE" = server ]; then
+            ./scripts/kconfig/merge_config.sh -m -O out out/.config ci/server.config
+            make -j"$(nproc)" "${mkargs[@]}" olddefconfig 2>&1 | tee -a build.log
+            python3 ci/check-server-config.py out/.config
+          elif [ "$PROFILE" != stock ]; then
+            echo "unsupported profile: $PROFILE" >&2
+            exit 1
+          fi
+          python3 ci/test-server-policy.py
+
           echo "== build: Image.gz-dtb =="
           make -j"$(nproc)" "${mkargs[@]}" Image.gz-dtb 2>&1 | tee -a build.log
 
           echo "== products =="
           ls -la out/arch/arm64/boot/Image out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb
           ls -la out/arch/arm64/boot/dts/mediatek/*.dtb
+
+      # r8188eu is the only driver in this tree that binds the bench adapter
+      # (Realtek 0bda:8179, RTL8188EUS). Its Kconfig says "depends on m", so it
+      # can never be built into vmlinux - but that is exactly what keeps the
+      # ABI gate happy: a module carries its own CRCs read from the running
+      # kernel at load time, it does not add or shift any exported symbol in
+      # vmlinux, so the nine vendor modules under /vendor/lib/modules keep
+      # loading. rtl8xxxu cannot be used here at all: dev_table[] has no
+      # 0x8179 entry and there is no rtl8188e_fops.
+      #
+      # This step is NOT continue-on-error: if the module does not build the
+      # release would be missing the only artifact that can drive this adapter.
+      - name: Build kernel modules (r8188eu)
+        run: |
+          set -euo pipefail
+          TOOLS="$PWD/toolchains"
+          export PATH="$TOOLS/clang-r383902/bin:$TOOLS/gcc-aarch64-linux-android-4.9/bin:$PATH"
+          export LD_LIBRARY_PATH="$TOOLS/clang-r383902/lib64:${LD_LIBRARY_PATH:-}"
+
+          # KCONFIG_CONFIG is left at the default so this reuses the out/.config
+          # that the step above already resolved (defconfig + optional
+          # ci/server.config), instead of re-deriving it.
+          #
+          # The OEM defconfig also carries five unrelated =m options
+          # (IKHEADERS, TCP_CONG_WESTWOOD, TCP_CONG_HTCP, BRIDGE_NETFILTER,
+          # LCD_CLASS_DEVICE). They are not part of this change and a failure
+          # in any of them must not cost us r8188eu.ko, so fall back to
+          # building just the one directory when the whole-tree call fails.
+          if ! make -j"$(nproc)" O=out ARCH=arm64 \
+            CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
+            CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" \
+            HOSTCC=gcc-9 HOSTCXX=g++-9 \
+            modules 2>&1 | tee -a build.log; then
+            echo "::warning::whole-tree 'make modules' failed, retrying only rtl8188eu"
+            make -j"$(nproc)" O=out ARCH=arm64 \
+              CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
+              CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" \
+              HOSTCC=gcc-9 HOSTCXX=g++-9 KBUILD_MODPOST_WARN=1 \
+              M=drivers/staging/rtl8188eu modules 2>&1 | tee -a build.log
+          fi
+
+          echo "== r8188eu products =="
+          ls -la out/drivers/staging/rtl8188eu/r8188eu.ko
+          # Resolved config must still say =m; a silent downgrade to n (e.g. a
+          # dependency dropped by merge_config.sh) would otherwise only show up
+          # as a missing file much later.
+          grep -q '^CONFIG_R8188EU=m$' out/.config
+          # No export from this driver, so nothing it builds can move a CRC.
+          if llvm-nm out/drivers/staging/rtl8188eu/r8188eu.ko | grep -q ' __ksymtab_'; then
+            echo "::error::r8188eu unexpectedly exports symbols; MODVERSIONS review needed"
+            exit 1
+          fi
+          modinfo out/drivers/staging/rtl8188eu/r8188eu.ko | head -20 || true
 
       # Best effort on purpose: the WiFi driver is an out-of-tree module built
       # from kernel_modules/connectivity/wlan/core/gen4m, and a failure here
@@ -380,6 +452,11 @@ jobs:
           cp out/arch/arm64/boot/Image.gz-dtb dist/
           cp out/arch/arm64/boot/Image dist/
           cp out/System.map dist/
+          # The RTL8188EU adapter (0bda:8179) is only reachable through this
+          # module - "depends on m" means it is never part of Image.gz-dtb.
+          # Ship it next to the kernel so the flash procedure does not have to
+          # rebuild it separately.
+          cp out/drivers/staging/rtl8188eu/r8188eu.ko dist/
           cp build.log dist/
           (cd dist && sha256sum * > SHA256SUMS.txt)
           ls -la dist
@@ -388,17 +465,31 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.sha }}
-          name: realme V11 kernel ${{ github.event.inputs.defconfig || 'oppo6833' }} ${{ github.sha }}
+          tag_name: build-${{ github.sha }}-${{ github.event.inputs.defconfig || 'oppo6833' }}-${{ github.event.inputs.server_profile || 'server' }}
+          name: realme V11 kernel ${{ github.event.inputs.defconfig || 'oppo6833' }} / ${{ github.event.inputs.server_profile || 'server' }} / ${{ github.sha }}
           body: |
             Automated build of `${{ github.sha }}` (${{ github.event.inputs.defconfig || 'oppo6833' }}_defconfig).
+
+            Profile: `${{ github.event.inputs.server_profile || 'server' }}`.
+            A passing build includes the exported-symbol CRC compatibility gate.
+            This does not verify charging, Ethernet throughput, or runtime governor selection.
 
             Artifacts in this release:
             - `Image.gz-dtb` - kernel + appended MT6833 device tree, the file to repack into boot.img
             - `Image` - raw arm64 kernel
+            - `r8188eu.ko` - Realtek RTL8188EU USB WiFi driver (0bda:8179 / 0bda:0179).
+              Built as a module because the driver's Kconfig says `depends on m`;
+              it is deliberately not part of the kernel image. Load it with
+              `insmod` after the kernel is booted. It needs
+              `rtlwifi/rtl8188eufw.bin` on the device (see below) and talks WEXT,
+              so pair it with `wpa_supplicant -Dwext`.
             - `System.map` - symbol map for the exact build
             - `build.log` - full compile log
             - `SHA256SUMS.txt` - checksums
+
+            r8188eu firmware is not bundled: push `rtlwifi/rtl8188eufw.bin` to
+            `/data/misc/firmware/active/` or `/odm/firmware/`, both of which are in
+            this kernel's `fw_path[]` table.
           files: dist/*
           fail_on_unmatched_files: true
         env:

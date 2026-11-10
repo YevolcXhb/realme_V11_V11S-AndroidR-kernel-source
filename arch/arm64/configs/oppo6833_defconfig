@@ -802,3 +802,38 @@ CONFIG_NFT_REDIR_IPV6=y
 CONFIG_NF_LOG_COMMON=y
 CONFIG_NF_LOG_IPV4=y
 CONFIG_NF_LOG_IPV6=y
+
+#
+# Realtek RTL8188EU USB WiFi (0bda:8179 / 0bda:0179)
+#
+# The adapter on the bench is a 0bda:8179 (RTL8188EUS). Two drivers in this
+# tree can claim it, and they are not interchangeable:
+#
+#   drivers/net/wireless/realtek/rtl8xxxu  - dev_table[] has 79 USB IDs but
+#     none of them is 0x8179 and there is no rtl8188e_fops, so it would never
+#     bind this adapter. It also needs CONFIG_MAC80211=y, which is currently
+#     off, and turning MAC80211 on would move exported-symbol CRCs.
+#   drivers/staging/rtl8188eu             - rtw_usb_id_tbl[] starts with
+#     {USB_DEVICE(0x0bda, 0x8179)}, i.e. exactly this device.
+#
+# So the staging driver is the only usable one here. Its Kconfig says
+# "depends on m", so R8188EU can only ever be a module - it cannot be built
+# into vmlinux. That is also what keeps the MODVERSIONS contract intact: a
+# module carries its own CRCs read at load time, it does not add any to
+# vmlinux, so the nine vendor modules in /vendor/lib/modules keep loading.
+#
+# Firmware: the driver calls request_firmware("rtlwifi/rtl8188eufw.bin"). It
+# is NOT embedded via CONFIG_EXTRA_FIRMWARE (which stays "valhall-1691526.wa"
+# only) because that would bake an unrelated blob into the kernel image. Drop
+# the .bin onto the device instead; this tree's fw_path[] already searches
+# /data/misc/firmware/active and /odm/firmware[/firmware], which is where the
+# deploy helper puts it.
+#
+# Userspace: r8188eu registers WEXT handlers (pnetdev->wireless_handlers in
+# os_dep/os_intfs.c) and only includes <net/cfg80211.h> from mon.c. It needs
+# wpa_supplicant -Dwext or iwconfig, not the nl80211 path Android's own WiFi
+# stack uses. CONFIG_CFG80211_WEXT stays off: it adds struct members to
+# struct wireless_dev, which is an exported type and would shift CRCs.
+#
+CONFIG_R8188EU=m
+CONFIG_88EU_AP_MODE=y
