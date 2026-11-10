@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
             if (flushed) printf("\n");
             bss++; flushed = 0;
             printf("[%2d] bssid ", bss);
-            for (int k = 0; k < 6; k++) printf("%02x%s", p[HDR + 2 + k], k < 5 ? ":" : "");
+            for (int k = 0; k < 6; k++) printf("%02x%s", p[HDR + 4 + k], k < 5 ? ":" : "");
             printf("  ");
         } else if (id == SIOCGIWESSID) {
             printf("ssid=\"");
