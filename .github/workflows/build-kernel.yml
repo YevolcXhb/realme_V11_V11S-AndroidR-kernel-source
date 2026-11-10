@@ -31,13 +31,14 @@ on:
           - oppo6833
           - oppo6833_debug
       server_profile:
-        description: Server DVFS defaults and USB Ethernet profile
+        description: Server DVFS defaults, USB Ethernet profile, or native Ubuntu
         required: true
         default: server
         type: choice
         options:
           - server
           - stock
+          - ubuntu
   push:
     branches: [main, master]
     paths:
@@ -170,6 +171,17 @@ jobs:
             ./scripts/kconfig/merge_config.sh -m -O out out/.config ci/server.config
             make -j"$(nproc)" "${mkargs[@]}" olddefconfig 2>&1 | tee -a build.log
             python3 ci/check-server-config.py out/.config
+          elif [ "$PROFILE" = ubuntu ]; then
+            # Keep the server/USB-DVFS defaults and layer the native-Linux
+            # requirements on top: devtmpfs, VT/console, the cgroup
+            # controllers systemd insists on, autofs/fanotify/seccomp.
+            # MODVERSIONS is irrelevant for this profile - Android is not
+            # going to load the vendor modules - so no CRC gate afterwards.
+            ./scripts/kconfig/merge_config.sh -m -O out out/.config ci/server.config
+            ./scripts/kconfig/merge_config.sh -m -O out out/.config ci/ubuntu.config
+            make -j"$(nproc)" "${mkargs[@]}" olddefconfig 2>&1 | tee -a build.log
+            python3 ci/check-server-config.py out/.config
+            python3 ci/check-ubuntu-config.py out/.config
           elif [ "$PROFILE" != stock ]; then
             echo "unsupported profile: $PROFILE" >&2
             exit 1
