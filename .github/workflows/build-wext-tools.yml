@@ -1,0 +1,61 @@
+name: Build wext probe tools
+
+# Small self-contained aarch64 binaries that speak Linux wireless extensions
+# (WEXT). Needed because this ROM ships a wpa_supplicant built with only the
+# nl80211 backend, while r8188eu is a pure WEXT driver - so nothing on the
+# device can drive it.
+#
+# Built against the NDK toolchain clang (static-ish, bionic) and published as
+# Release assets so the device can pull them with curl/adb.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/wext/**'
+      - '.github/workflows/build-wext-tools.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up NDK
+        run: |
+          set -euo pipefail
+          wget -q https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
+          unzip -q android-ndk-r26d-linux.zip
+          echo "NDK=$PWD/android-ndk-r26d" >> "$GITHUB_ENV"
+
+      - name: Compile
+        run: |
+          set -euo pipefail
+          TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          CC="$TC/aarch64-linux-android29-clang"
+          mkdir -p dist
+          for f in tools/wext/*.c; do
+            base=$(basename "$f" .c)
+            echo "== $base =="
+            "$CC" -O2 -Wall -Wextra -o "dist/$base" "$f" || exit 1
+            "$TC/llvm-strip" "dist/$base" 2>/dev/null || true
+            ls -la "dist/$base"
+          done
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: wext-tools-${{ github.sha }}
+          name: wext tools ${{ github.sha }}
+          body: |
+            aarch64 binaries for driving a WEXT-only WiFi driver on Android.
+            Install with: adb push <bin> /data/local/tmp/ && chmod 755
+          files: dist/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
