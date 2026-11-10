@@ -40,6 +40,20 @@ struct sugov_tunables {
 	unsigned int down_rate_limit_us;
 };
 
+static void sugov_init_rate_limits(struct sugov_tunables *tunables,
+				  unsigned int transition_delay_us)
+{
+	tunables->up_rate_limit_us = transition_delay_us;
+	tunables->down_rate_limit_us = transition_delay_us;
+#ifdef CONFIG_MTK_SERVER_SCHEDUTIL
+	/* Preserve the driver delay and the existing runtime sysfs controls. */
+	tunables->up_rate_limit_us = max(tunables->up_rate_limit_us,
+		(unsigned int)CONFIG_MTK_SERVER_SCHEDUTIL_UP_RATE_US);
+	tunables->down_rate_limit_us = max(tunables->up_rate_limit_us,
+		(unsigned int)CONFIG_MTK_SERVER_SCHEDUTIL_DOWN_RATE_US);
+#endif
+}
+
 struct sugov_policy {
 	struct cpufreq_policy *policy;
 
@@ -841,8 +855,8 @@ static int sugov_init(struct cpufreq_policy *policy)
 		goto stop_kthread;
 	}
 
-	tunables->up_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
-	tunables->down_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
+	sugov_init_rate_limits(tunables,
+			       cpufreq_policy_transition_delay_us(policy));
 
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;

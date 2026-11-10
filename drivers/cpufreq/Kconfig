@@ -232,6 +232,34 @@ config CPU_FREQ_GOV_SCHEDUTIL
 
 	  If in doubt, say N.
 
+config MTK_SERVER_SCHEDUTIL
+	bool "MT6833 server schedutil defaults"
+	depends on MACH_MT6833 && CPU_FREQ_GOV_SCHEDUTIL
+	default n
+	help
+	  Apply asymmetric initial DVFS rate limits for a server workload.
+	  Keep WALT/HMP, frequency ceilings, thermal limits and runtime sysfs
+	  controls unchanged. This is a governor profile, not a new scheduler.
+
+config MTK_SERVER_SCHEDUTIL_UP_RATE_US
+	int "Server schedutil minimum up rate limit (us)"
+	depends on MTK_SERVER_SCHEDUTIL
+	range 1 1000000
+	default 2000
+	help
+	  Minimum delay between frequency increases. The hardware transition
+	  delay remains a lower bound. Benchmark before changing this value.
+
+config MTK_SERVER_SCHEDUTIL_DOWN_RATE_US
+	int "Server schedutil minimum down rate limit (us)"
+	depends on MTK_SERVER_SCHEDUTIL
+	range 1 1000000
+	default 20000
+	help
+	  Minimum delay between frequency decreases. A longer down delay can
+	  reduce DVFS churn between short requests but may use more energy.
+	  The effective value is never below the effective up rate limit.
+
 comment "CPU frequency scaling drivers"
 
 config CPUFREQ_DT

@@ -189,12 +189,14 @@ static void _set_vbus(int is_on)
 
 #ifdef CONFIG_MTK_USB_TYPEC
 #ifdef CONFIG_TCPC_CLASS
+static bool typec_req_vbus;
+
 static void do_vbus_work(struct work_struct *data)
 {
 	struct mt_usb_work *work =
 		container_of(data, struct mt_usb_work, dwork.work);
-	bool vbus_on = (work->ops ==
-			VBUS_OPS_ON ? true : false);
+	/* A queued source-on must not run after PD has already withdrawn it. */
+	bool vbus_on = READ_ONCE(typec_req_vbus);
 
 	_set_vbus(vbus_on);
 	/* free kfree */
@@ -227,12 +229,14 @@ static void issue_vbus_work(int ops, int delay)
 
 static void mt_usb_vbus_on(int delay)
 {
+	WRITE_ONCE(typec_req_vbus, true);
 	DBG(0, "vbus_on\n");
 	issue_vbus_work(VBUS_OPS_ON, delay);
 }
 
 static void mt_usb_vbus_off(int delay)
 {
+	WRITE_ONCE(typec_req_vbus, false);
 	DBG(0, "vbus_off\n");
 	issue_vbus_work(VBUS_OPS_OFF, delay);
 }
@@ -318,13 +322,13 @@ static void issue_host_work(int ops, int delay, bool on_st)
 }
 void mt_usb_host_connect(int delay)
 {
-	typec_req_host = true;
+	WRITE_ONCE(typec_req_host, true);
 	DBG(0, "%s\n", typec_req_host ? "connect" : "disconnect");
 	issue_host_work(CONNECTION_OPS_CONN, delay, true);
 }
 void mt_usb_host_disconnect(int delay)
 {
-	typec_req_host = false;
+	WRITE_ONCE(typec_req_host, false);
 	DBG(0, "%s\n", typec_req_host ? "connect" : "disconnect");
 	issue_host_work(CONNECTION_OPS_DISC, delay, true);
 }
@@ -334,6 +338,9 @@ static int otg_tcp_notifier_call(struct notifier_block *nb,
 		unsigned long event, void *data)
 {
 	struct tcp_notify *noti = data;
+
+	if (!noti || !mtk_musb)
+		return NOTIFY_DONE;
 
 	switch (event) {
 	case TCP_NOTIFY_SOURCE_VBUS:
@@ -351,16 +358,12 @@ static int otg_tcp_notifier_call(struct notifier_block *nb,
 			noti->typec_state.new_state == TYPEC_ATTACHED_SRC) {
 			DBG(0, "OTG Plug in\n");
 			mt_usb_host_connect(0);
-		} else if ((noti->typec_state.old_state == TYPEC_ATTACHED_SRC ||
-			noti->typec_state.old_state == TYPEC_ATTACHED_SNK) &&
+		} else if (noti->typec_state.old_state != TYPEC_UNATTACHED &&
 			noti->typec_state.new_state == TYPEC_UNATTACHED) {
-			if (is_host_active(mtk_musb)) {
-				DBG(0, "OTG Plug out\n");
-				mt_usb_host_disconnect(0);
-			} else {
-				DBG(0, "USB Plug out\n");
-				mt_usb_disconnect();
-			}
+			/* Clear pending host intent even before the HCD becomes active. */
+			DBG(0, "Type-C Plug out\n");
+			mt_usb_host_disconnect(0);
+			mt_usb_disconnect();
 #ifdef CONFIG_MTK_UART_USB_SWITCH
 		} else if ((noti->typec_state.new_state ==
 					TYPEC_ATTACHED_SNK ||
@@ -378,13 +381,14 @@ static int otg_tcp_notifier_call(struct notifier_block *nb,
 	case TCP_NOTIFY_DR_SWAP:
 		DBG(0, "TCP_NOTIFY_DR_SWAP, new role=%d\n",
 				noti->swap_state.new_role);
-		if (is_host_active(mtk_musb) &&
-			noti->swap_state.new_role == PD_ROLE_UFP) {
+		/* Trust the negotiated data role, not the delayed MUSB state.
+		 * DFP may be a power sink: do not enable VBUS from a DR_SWAP.
+		 */
+		if (noti->swap_state.new_role == PD_ROLE_UFP) {
 			DBG(0, "switch role to device\n");
 			mt_usb_host_disconnect(0);
 			mt_usb_connect();
-		} else if (is_peripheral_active(mtk_musb) &&
-			noti->swap_state.new_role == PD_ROLE_DFP) {
+		} else if (noti->swap_state.new_role == PD_ROLE_DFP) {
 			DBG(0, "switch role to host\n");
 			mt_usb_disconnect();
 			mt_usb_host_connect(0);
@@ -396,12 +400,20 @@ static int otg_tcp_notifier_call(struct notifier_block *nb,
 #endif
 #endif
 
+/* Called under musb_lock after any wait: skip superseded Type-C work. */
+static bool mt_usb_host_work_requested(bool queued_host)
+{
+	if (READ_ONCE(typec_control))
+		return READ_ONCE(typec_req_host);
+	return queued_host;
+}
+
 static bool musb_is_host(void)
 {
 	bool host_mode = 0;
 
 	if (typec_control)
-		host_mode = typec_req_host;
+		host_mode = READ_ONCE(typec_req_host);
 	else
 		host_mode = iddig_req_host;
 
@@ -572,8 +584,8 @@ static void do_host_work(struct work_struct *data)
 
 	down(&mtk_musb->musb_lock);
 
-	host_on = (work->ops ==
-			CONNECTION_OPS_CONN ? true : false);
+	host_on = mt_usb_host_work_requested(work->ops ==
+					      CONNECTION_OPS_CONN);
 
 	DBG(0, "work start, is_host=%d, host_on=%d\n",
 		mtk_musb->is_host, host_on);
