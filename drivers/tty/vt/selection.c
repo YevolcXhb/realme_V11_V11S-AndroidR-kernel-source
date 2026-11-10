@@ -348,17 +348,13 @@ int set_selection(const struct tiocl_selection __user *v, struct tty_struct *tty
 	return ret;
 }
 
-int set_selection(const struct tiocl_selection __user *v,
-	struct tty_struct *tty)
-{
-	int ret;
-
-	console_lock();
-	ret = __set_selection(v, tty);
-	console_unlock();
-
-	return ret;
-}
+/*
+ * NOTE: a second, stale definition of set_selection() used to sit here. It
+ * predated the sel_lock/console_lock variant above and was dead code: with
+ * CONFIG_VT off the whole file is not built, so nobody noticed that enabling
+ * VT makes clang fail with "redefinition of 'set_selection'". Keeping the
+ * locked version and dropping this one is the whole fix.
+ */
 
 /* Insert the contents of the selection buffer into the
  * queue of the tty associated with the current console.
