@@ -1,6 +1,3 @@
-/* r8188eu WEXT probe: trigger a scan and dump raw scan results.
- * Built for aarch64 (bionic) so it runs on the device as root.
- */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,19 +7,18 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 
-#define SIOCSIWSCAN     0x8B18
-#define SIOCGIWSCAN     0x8B19
-#define SIOCGIWNAME     0x8B01
-#define SIOCGIWAP       0x8B15
-#define SIOCGIWESSID    0x8B1B
+#define SIOCSIWSCAN 0x8B18
+#define SIOCGIWSCAN 0x8B19
+#define SIOCGIWNAME 0x8B01
+#define SIOCGIWAP   0x8B15
+#define SIOCGIWESSID 0x8B1B
 
 struct iw_point_u { void *pointer; unsigned short length; unsigned short flags; };
 struct iwreq_u { char ifrn_name[16]; union { struct iw_point_u data; char pad[32]; } u; };
+#define LCP 4
 
-#define IW_EV_LCP_LEN 4
-
-static const char *evname(int id) {
-    switch (id) {
+static const char *evname(int id){
+    switch(id){
     case 0x8B15: return "SIOCGIWAP";
     case 0x8B1B: return "SIOCGIWESSID";
     case 0x8B1F: return "SIOCGIWFREQ";
@@ -33,71 +29,59 @@ static const char *evname(int id) {
     case 0x8C01: return "IWEVASSOCREQIE";
     case 0x8C02: return "IWEVASSOCRESPIE";
     case 0x8C04: return "IWEVGENIE";
-    default:     return "event";
+    default: return "event";
     }
 }
 
-int main(int argc, char **argv) {
-    const char *ifname = argc > 1 ? argv[1] : "wlan2";
-    struct iwreq_u wrq;
-    int s = socket(AF_INET, SOCK_DGRAM, 0);
-    if (s < 0) { perror("socket"); return 1; }
+int main(int argc,char**argv){
+    const char *ifn = argc>1?argv[1]:"wlan2";
+    struct iwreq_u w;
+    int s=socket(AF_INET,SOCK_DGRAM,0);
+    if(s<0){perror("socket");return 1;}
 
-    memset(&wrq, 0, sizeof wrq);
-    strncpy(wrq.ifrn_name, ifname, 15);
-    if (ioctl(s, SIOCGIWNAME, &wrq) == 0)
-        printf("SIOCGIWNAME : %s\n", (char*)&wrq.u.data);
-    else
-        printf("SIOCGIWNAME : FAILED %s\n", strerror(errno));
+    memset(&w,0,sizeof w); strncpy(w.ifrn_name,ifn,15);
+    if(ioctl(s,SIOCGIWNAME,&w)==0) printf("IWNAME ok\n");
+    else printf("IWNAME fail %s\n",strerror(errno));
 
-    memset(&wrq, 0, sizeof wrq);
-    strncpy(wrq.ifrn_name, ifname, 15);
-    if (ioctl(s, SIOCSIWSCAN, &wrq) < 0) {
-        printf("SIOCSIWSCAN : FAILED %s (errno=%d)\n", strerror(errno), errno);
-        close(s); return 2;
-    }
-    printf("SIOCSIWSCAN : accepted\n");
+    /* TRIGGER: report the real return value, not just "accepted" */
+    memset(&w,0,sizeof w); strncpy(w.ifrn_name,ifn,15);
+    errno=0;
+    int rc=ioctl(s,SIOCSIWSCAN,&w);
+    printf("SIWSCAN rc=%d errno=%d (%s)\n", rc, errno, strerror(errno));
+    if(rc<0){ close(s); return 2; }
 
-    char *buf = malloc(256*1024);
-    int got = -1;
-    for (int i = 0; i < 40; i++) {
-        memset(&wrq, 0, sizeof wrq);
-        strncpy(wrq.ifrn_name, ifname, 15);
-        wrq.u.data.pointer = buf;
-        wrq.u.data.length = 256*1024;
-        if (ioctl(s, SIOCGIWSCAN, &wrq) < 0) {
-            if (errno == EAGAIN || errno == E2BIG) { usleep(300000); continue; }
-            printf("SIOCGIWSCAN : FAILED %s (errno=%d)\n", strerror(errno), errno);
-            close(s); free(buf); return 4;
-        }
-        got = wrq.u.data.length;
+    /* GET: call it a few times, print what each attempt returns */
+    char *buf=malloc(256*1024);
+    int best=-1;
+    for(int i=0;i<8;i++){
+        memset(&w,0,sizeof w); strncpy(w.ifrn_name,ifn,15);
+        w.u.data.pointer=buf; w.u.data.length=256*1024; w.u.data.flags=0;
+        errno=0;
+        int r=ioctl(s,SIOCGIWSCAN,&w);
+        printf("  GET[%d] rc=%d errno=%d(%s) len=%u\n",
+               i, r, errno, strerror(errno), w.u.data.length);
+        if(r==0){ best=(int)w.u.data.length; break; }
+        if(errno==EAGAIN){ usleep(400000); continue; }
         break;
     }
-    if (got < 0) { printf("SIOCGIWSCAN : timeout\n"); close(s); free(buf); return 5; }
+    if(best<0){ printf("no results\n"); close(s); free(buf); return 5; }
 
-    printf("SIOCGIWSCAN : %d bytes\n", got);
-    int off = 0, n = 0;
-    while (off + IW_EV_LCP_LEN <= got) {
-        unsigned short id, len;
-        memcpy(&id,  buf+off, 2);
-        memcpy(&len, buf+off+2, 2);
-        if (!len || off+len > got) break;
-        if (id == SIOCGIWAP) { n++; printf("\n--- BSS #%d ---\n", n); }
-        printf("  %-16s len=%-4u", evname(id), len);
-        if (id == SIOCGIWAP) {
-            unsigned char *p = (unsigned char*)(buf+off);
-            printf(" MAC");
-            for (int k = 0; k < 6; k++) printf(":%02x", p[IW_EV_LCP_LEN+2+k]);
-        } else if (id == SIOCGIWESSID) {
-            unsigned char *p = (unsigned char*)(buf+off);
-            printf(" ");
-            for (int k = IW_EV_LCP_LEN; k < len; k++)
-                if (p[k] >= 0x20 && p[k] < 0x7f) putchar(p[k]);
-        }
+    printf("\nbytes=%d\n", best);
+    int off=0,n=0;
+    while(off+LCP<=best){
+        unsigned short id,len;
+        memcpy(&id,buf+off,2); memcpy(&len,buf+off+2,2);
+        if(!len||off+len>best) break;
+        if(id==SIOCGIWAP){n++;printf("\n--- BSS %d ---\n",n);}
+        printf("  %-16s len=%u",evname(id),len);
+        if(id==SIOCGIWAP){unsigned char*p=(unsigned char*)(buf+off);printf(" MAC");
+            for(int k=0;k<6;k++)printf(":%02x",p[LCP+2+k]);}
+        else if(id==SIOCGIWESSID){unsigned char*p=(unsigned char*)(buf+off);printf(" \"");
+            for(int k=LCP;k<len;k++) if(p[k]>=0x20&&p[k]<0x7f) putchar(p[k]);
+            printf("\"");}
         printf("\n");
-        off += len;
+        off+=len;
     }
-    printf("\ntotal BSS: %d\n", n);
-    close(s); free(buf);
-    return n > 0 ? 0 : 6;
+    printf("\ntotal BSS: %d\n",n);
+    close(s);free(buf);return n>0?0:6;
 }
