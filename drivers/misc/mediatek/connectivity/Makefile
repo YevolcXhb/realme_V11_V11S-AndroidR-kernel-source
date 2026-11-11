@@ -81,13 +81,22 @@ endif
         $(warning symbolic link to $(PATH_TO_WLAN_CHR_DRV))
         $(warning symbolic link to $(PATH_TO_WLAN_DRV))
 
-        $(shell unlink $(srctree)/$(src)/wmt_drv)
-        $(shell unlink $(srctree)/$(src)/wmt_chrdev_wifi)
-        $(shell unlink $(srctree)/$(src)/wlan_drv_gen4m)
+        # ABS_PATH maps to .../connectivity/common, .../connectivity/wlan/adaptor
+        # and .../connectivity/wlan/core/gen4m, but kbuild needs the links named
+        # exactly like the object targets it recurses into and each link must
+        # point at a directory that itself has a Makefile. The stub directories
+        # under builtin/ carry those Makefiles (obj-y += ../../...) so the vendor
+        # sources stay untouched instead of gaining a Makefile of our own.
+        $(shell unlink $(srctree)/$(src)/wmt_drv 2>/dev/null; true)
+        $(shell unlink $(srctree)/$(src)/wmt_chrdev_wifi 2>/dev/null; true)
+        $(shell unlink $(srctree)/$(src)/wlan_drv_gen4m 2>/dev/null; true)
+        $(shell rm -rf $(srctree)/$(src)/builtin)
 
         $(shell ln -s $(ABS_PATH_TO_WMT_DRV)      $(srctree)/$(src)/wmt_drv)
         $(shell ln -s $(ABS_PATH_TO_WLAN_CHR_DRV) $(srctree)/$(src)/wmt_chrdev_wifi)
-        $(shell ln -s $(ABS_PATH_TO_WLAN_DRV)     $(srctree)/$(src)/wlan_drv_gen4m)
+        BUILTIN_STUB := $(srctree)/$(src)/builtin
+        $(shell mkdir -p $(BUILTIN_STUB)/wmt_drv $(BUILTIN_STUB)/wmt_chrdev_wifi $(BUILTIN_STUB)/wlan_drv_gen4m)
+        $(shell printf '%s\n' 'obj-y += ../../$(MODULE_NAME).o' > $(BUILTIN_STUB)/wlan_drv_gen4m/Makefile)
 
         # for gen4m options
         export CONFIG_MTK_COMBO_WIFI_HIF=axi
@@ -113,9 +122,14 @@ endif
         # Do build-in for xxx.c checking
         subdir-ccflags-y += -D MTK_WCN_REMOVE_KERNEL_MODULE
         subdir-ccflags-y += -D MTK_WCN_BUILT_IN_DRIVER
-        obj-y += wmt_drv/
-        obj-y += wmt_chrdev_wifi/
-        obj-y += wlan_drv_gen4m/
+        # common/ and wlan/adaptor each build a single object (wmt_drv.o and
+        # wmt_chrdev_wifi.o) that links their subdirectories in itself, so they
+        # are recursed into directly through the symlinks above. Gen4m names its
+        # object after WLAN_CHIP_ID (wlan_drv_gen4m.o) and has no Makefile at the
+        # directory root, hence the stub.
+        include $(src)/builtin/wmt_drv/Makefile
+        include $(src)/builtin/wmt_chrdev_wifi/Makefile
+        obj-y += builtin/wlan_drv_gen4m/
 
         # For BT built-in mode start @{
         # ifneq (,$(filter $(CONFIG_MTK_COMBO_CHIP), "CONSYS_6885"))
