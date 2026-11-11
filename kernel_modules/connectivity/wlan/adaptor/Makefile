@@ -5,7 +5,13 @@
 # MTK_WIFI_AS_MODULE forces the object lists back to obj-m for this build only;
 # nothing in vmlinux changes.
 ifneq ($(MTK_WIFI_AS_MODULE),)
+# CONFIG_MTK_COMBO must be non-empty or the whole file body is skipped.
+CONFIG_MTK_COMBO := m
+# n selects the module branch here instead of obj-y.
 CONFIG_WLAN_DRV_BUILD_IN := n
+# gen4m picks obj-$(CONFIG_MTK_WIFI_ONLY) when this is empty, which is not a
+# variable kbuild reads at all; n makes it fall through to MTK_COMBO_WIFI.
+CONFIG_MTK_WIFI_ONLY := n
 CONFIG_MTK_COMBO_WIFI := m
 endif
 ###############################################################################
