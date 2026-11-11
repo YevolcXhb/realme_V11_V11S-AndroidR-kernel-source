@@ -86,6 +86,11 @@ jobs:
           fetch-depth: 1
 
       - name: Install host packages
+        # GitHub's runner mirror (azure.archive.ubuntu.com) has been failing DNS
+        # for long stretches, which aborted builds here before any code was
+        # compiled. Retrying the step is cheaper than teaching apt to switch
+        # mirrors, and the install itself is idempotent.
+        retry: 3
         run: |
           # GitHub's runner mirror (azure.archive.ubuntu.com) has been failing
           # DNS for stretches of time, which killed whole builds at this step
