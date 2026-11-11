@@ -86,34 +86,29 @@ jobs:
           fetch-depth: 1
 
       - name: Install host packages
-        # GitHub's runner mirror (azure.archive.ubuntu.com) has been failing DNS
-        # for long stretches, which aborted builds here before any code was
-        # compiled. Retrying the step is cheaper than teaching apt to switch
-        # mirrors, and the install itself is idempotent.
-        retry: 3
+        # libssl-dev: scripts/sign-file + extract-cert link against -lcrypto
+        #   (defconfig has CONFIG_MODULE_SIG=y).
+        # gcc-9: the shipped scripts/dtc/*.c_shipped define yylloc without
+        #   extern; gcc-10+ (default -fno-common) makes that a duplicate
+        #   symbol error. gcc-9 keeps -fcommon on.
+        # bc/bison/flex/cpio: standard 4.14 build deps.
+        #
+        # The runner's Azure mirror has outages that leave azure.archive.ubuntu.com
+        # unresolvable and abort the job before anything compiles, so the apt
+        # update is attempted a few times before the install runs.
         run: |
-          # GitHub's runner mirror (azure.archive.ubuntu.com) has been failing
-          # DNS for stretches of time, which killed whole builds at this step
-          # before any code compiled. Fall back to a reachable mirror when the
-          # default one cannot be resolved, and retry the update once.
+          set -uo pipefail
+          sudo apt-get update
           for i in 1 2 3; do
-            if sudo apt-get update; then break; fi
-            if ! getent hosts azure.archive.ubuntu.com; then
-              echo "runner mirror unresolvable; switching to archive.ubuntu.com"
-              sudo sed -i -E 's#https?://[a-z.]*archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
-                /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
-              sudo rm -f /etc/apt/apt-mirrors.txt
+            if sudo apt-get install -y --no-install-recommends \
+                 bc bison flex cpio libssl-dev gcc-9 g++-9; then
+              exit 0
             fi
-            sleep 15
+            echo "::warning::apt install attempt $i failed, retrying after update"
+            sleep 20
+            sudo apt-get update || true
           done
-          # libssl-dev: scripts/sign-file + extract-cert link against -lcrypto
-          #   (defconfig has CONFIG_MODULE_SIG=y).
-          # gcc-9: the shipped scripts/dtc/*.c_shipped define `yylloc` without
-          #   `extern`; gcc-10+ (default -fno-common) makes that a duplicate
-          #   symbol error. gcc-9 keeps -fcommon on.
-          # bc/bison/flex/cpio: standard 4.14 build deps.
-          sudo apt-get install -y --no-install-recommends \
-            bc bison flex cpio libssl-dev gcc-9 g++-9
+          exit 1
 
       - name: Cache toolchains
         id: tc
