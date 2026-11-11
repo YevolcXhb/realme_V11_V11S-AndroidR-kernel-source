@@ -97,15 +97,16 @@ endif
         # vendor directory. AOSP builds solve the same problem by making those
         # directories read-only, because the vendor Makefiles insist on
         # re-creating these links themselves.
-        # D := $(srctree)/$(src) is only correct while kbuild parses this file
-        # from the kernel root; inside a subdirectory $(srctree) already ends in
-        # that directory, which is why the vendor-object wrapper above failed
-        # with "cannot create ../drivers/.../Makefile: Directory nonexistent".
-        # LOCAL_SRC resolves relative to src/ itself and is therefore stable no
-        # matter where this Makefile is read from. SRC_ABS derives an absolute
-        # path from $(CURDIR), which kbuild sets to the directory being built.
-        LOCAL_SRC := $(patsubst $(srctree)/%,%,$(src))
-        SRC_ABS   := $(CURDIR)/$(if $(LOCAL_SRC),$(LOCAL_SRC),.)
+        # The targets must live in the *source* tree, because that is where
+        # kbuild looks for the directories it recurses into. $(CURDIR) points at
+        # the object tree during O= builds, so VIA (the out/ prefix found by
+        # walking this file's own path up through srctree) comes off first;
+        # LOCAL_SRC is then relative to the kernel root and survives the fact
+        # that $(srctree) means a different thing when this file is reached
+        # from a subdirectory during a second, recursive parse.
+        VIA       := $(filter-out $(srctree)%,$(patsubst $(srctree)%,%,$(CURDIR)))
+        LOCAL_SRC := $(patsubst $(VIA)%/%,%,$(patsubst $(srctree)/%,%,$(src)))
+        SRC_ABS   := $(srctree)/$(LOCAL_SRC)
 
         WMT_DRV_PATH     := $(SRC_ABS)/wmt_drv
         WMT_CHR_DRV_PATH := $(SRC_ABS)/wmt_chrdev_wifi
