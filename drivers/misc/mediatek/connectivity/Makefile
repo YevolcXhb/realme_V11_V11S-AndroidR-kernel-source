@@ -87,34 +87,27 @@ endif
         #
         #   * it only recurses into a directory listed in obj-y when that
         #     directory has a Makefile, and gen4m has none at its root;
-        #   * "obj-y += wmt_drv/" makes kbuild look for wmt_drv/built-in.o, but
-        #     common/Makefile emits a single object, wmt_drv.o;
-        #   * target "foo/" means "foo/built-in.o", so a plain directory target
-        #     never produces the Makefile kbuild needs when it descends.
+        #   * "obj-y += wmt_drv/" then expects wmt_drv/built-in.o, but
+        #     common/Makefile emits a single object named wmt_drv.o;
+        #   * a target spelled "foo/" means foo/built-in.o, so it never creates
+        #     the Makefile kbuild wants to find when it descends.
         #
-        # So give each vendor source its own stub directory holding a one-line
-        # Makefile that pulls the real object in, and make the rules depend on
-        # those Makefiles. kbuild descends only after its prerequisites are
-        # satisfied, which is what puts them there in the right order.
-        WMT_DRV_DIR      := $(srctree)/$(src)/wmt_drv
-        WMT_CHR_DRV_DIR  := $(srctree)/$(src)/wmt_chrdev_wifi
-        BUILTIN_DIR      := $(srctree)/$(src)/builtin
-
+        # A $(subdir-y) entry is what actually expresses this: kbuild adds it to
+        # its own directory list before it globs the filesystem, and the rule
+        # below is attached directly to that directory so the stub Makefile is
+        # written before the descent.
         builtin_dirs:
 	@rm -rf $(srctree)/$(src)/wmt_drv $(srctree)/$(src)/wmt_chrdev_wifi $(srctree)/$(src)/builtin
 	@ln -s $(ABS_PATH_TO_WMT_DRV)      $(srctree)/$(src)/wmt_drv
 	@ln -s $(ABS_PATH_TO_WLAN_CHR_DRV) $(srctree)/$(src)/wmt_chrdev_wifi
-	@mkdir -p $(BUILTIN_DIR)/wmt_drv $(BUILTIN_DIR)/wmt_chrdev_wifi $(BUILTIN_DIR)/wlan_drv_gen4m
-	@printf '%s\n' 'obj-y += $(MODULE_NAME).o' > $(BUILTIN_DIR)/wmt_drv/Makefile
-	@printf '%s\n' 'obj-y += $(MODULE_NAME).o' > $(BUILTIN_DIR)/wmt_chrdev_wifi/Makefile
-	@printf '%s\n' 'obj-y += ../../$(MODULE_NAME).o' > $(BUILTIN_DIR)/wlan_drv_gen4m/Makefile
+	@mkdir -p $(srctree)/$(src)/builtin/wmt_drv $(srctree)/$(src)/builtin/wmt_chrdev_wifi $(srctree)/$(src)/builtin/wlan_drv_gen4m
+	@printf '%s\n' 'obj-y += $(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wmt_drv/Makefile
+	@printf '%s\n' 'obj-y += $(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wmt_chrdev_wifi/Makefile
+	@printf '%s\n' 'obj-y += ../../$(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wlan_drv_gen4m/Makefile
 
-        $(BUILTIN_DIR)/wmt_drv/Makefile $(BUILTIN_DIR)/wmt_chrdev_wifi/Makefile \
-        $(BUILTIN_DIR)/wlan_drv_gen4m/Makefile: builtin_dirs ;
+        subdir-y += builtin/wmt_drv builtin/wmt_chrdev_wifi builtin/wlan_drv_gen4m
 
-        builtin/wmt_drv/built-in.o: $(BUILTIN_DIR)/wmt_drv/Makefile
-        builtin/wmt_chrdev_wifi/built-in.o: $(BUILTIN_DIR)/wmt_chrdev_wifi/Makefile
-        builtin/wlan_drv_gen4m/built-in.o: $(BUILTIN_DIR)/wlan_drv_gen4m/Makefile
+        builtin/wmt_drv builtin/wmt_chrdev_wifi builtin/wlan_drv_gen4m: builtin_dirs
 
         # for gen4m options
         export CONFIG_MTK_COMBO_WIFI_HIF=axi
@@ -140,11 +133,6 @@ endif
         # Do build-in for xxx.c checking
         subdir-ccflags-y += -D MTK_WCN_REMOVE_KERNEL_MODULE
         subdir-ccflags-y += -D MTK_WCN_BUILT_IN_DRIVER
-        # The stub directories above hold nothing but a Makefile, so they are
-        # ordered prerequisites rather than object lists of their own.
-        obj-y += builtin/wmt_drv/built-in.o builtin/wmt_chrdev_wifi/built-in.o \
-                 builtin/wlan_drv_gen4m/built-in.o
-
         # For BT built-in mode start @{
         # ifneq (,$(filter $(CONFIG_MTK_COMBO_CHIP), "CONSYS_6885"))
         #     PATH_TO_BT_DRV       = vendor/mediatek/kernel_modules/connectivity/bt/mt66xx/connac2
