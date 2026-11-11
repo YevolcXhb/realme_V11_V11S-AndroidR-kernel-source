@@ -92,36 +92,17 @@ endif
         #   * entries are resolved relative to the directory being built, so a
         #     path with ".." in it can never match.
         #
-        # So: create the three links here, at parse time -- before kbuild goes
-        # looking for directories -- and write a one-line Makefile into each
-        # vendor directory. AOSP builds solve the same problem by making those
-        # directories read-only, because the vendor Makefiles insist on
-        # re-creating these links themselves.
-        # The stubs must live in the source tree -- an O= build runs kbuild
-        # from the object tree, and $(OUT) (the leading component of $(src) for
-        # an out-of-tree build, empty for an in-tree one) comes off first.
-        # What is left is relative to the kernel root and stays correct when
-        # this Makefile is parsed again from a subdirectory.
-        OUT       := $(firstword $(subst /, ,$(patsubst $(srctree)/%,%,$(src))))
-        LOCAL_SRC := $(patsubst $(OUT)/%,%,$(patsubst $(srctree)/%,%,$(src)))
-        SRC_ABS   := $(srctree)/$(LOCAL_SRC)
+        # So each vendor source is reached through a directory of its own that
+        # only states which object to build. kbuild resolves wmt_drv/,
+        # wmt_chrdev_wifi/ and wlan_drv_gen4m/ against the directory being
+        # built, and this Makefile is read more than once (as part of the
+        # directory's object list, and again from inside that directory), so
+        # that directory plus its one-line Makefile has to be in place before
+        # make starts. CI does it in "Stage vendor connectivity sources";
+        # AOSP gets the same effect by checking the links in, because the
+        # vendor Makefiles recreate them and would otherwise fail on a
+        # read-only tree.
 
-        WMT_DRV_PATH     := $(SRC_ABS)/wmt_drv
-        WMT_CHR_DRV_PATH := $(SRC_ABS)/wmt_chrdev_wifi
-        WLAN_DRV_PATH    := $(SRC_ABS)/wlan_drv_gen4m
-
-        $(shell rm -f $(WMT_DRV_PATH) $(WMT_CHR_DRV_PATH) $(WLAN_DRV_PATH))
-        $(shell ln -s $(ABS_PATH_TO_WMT_DRV)      $(WMT_DRV_PATH))
-        $(shell ln -s $(ABS_PATH_TO_WLAN_CHR_DRV) $(WMT_CHR_DRV_PATH))
-        $(shell ln -s $(ABS_PATH_TO_WLAN_DRV)     $(WLAN_DRV_PATH))
-        # One line per vendor directory: forward the single object that
-        # directory's own Makefile emits instead of asking for a built-in.o it
-        # never produces. Written literally because this file's own
-        # $(MODULE_NAME) is connadp at this point.
-        $(shell echo 'obj-y += wmt_drv.o' > $(WMT_DRV_PATH)/Makefile)
-        $(shell echo 'obj-y += wmt_chrdev_wifi.o' > $(WMT_CHR_DRV_PATH)/Makefile)
-        $(shell echo 'obj-y += wlan_drv_gen4m.o' > $(WLAN_DRV_PATH)/Makefile)
-        $(info WLAN_DRV_BUILD_IN: wmt=$(WMT_DRV_PATH) exists=$(wildcard $(WMT_DRV_PATH)))
 
         subdir-y += wmt_drv wmt_chrdev_wifi wlan_drv_gen4m
 
