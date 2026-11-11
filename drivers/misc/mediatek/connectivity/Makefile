@@ -92,22 +92,22 @@ endif
         #   * a target spelled "foo/" means foo/built-in.o, so it never creates
         #     the Makefile kbuild wants to find when it descends.
         #
-        # A $(subdir-y) entry is what actually expresses this: kbuild adds it to
-        # its own directory list before it globs the filesystem, and the rule
-        # below is attached directly to that directory so the stub Makefile is
-        # written before the descent.
-        builtin_dirs:
-	@rm -rf $(srctree)/$(src)/wmt_drv $(srctree)/$(src)/wmt_chrdev_wifi $(srctree)/$(src)/builtin
-	@ln -s $(ABS_PATH_TO_WMT_DRV)      $(srctree)/$(src)/wmt_drv
-	@ln -s $(ABS_PATH_TO_WLAN_CHR_DRV) $(srctree)/$(src)/wmt_chrdev_wifi
-	@mkdir -p $(srctree)/$(src)/builtin/wmt_drv $(srctree)/$(src)/builtin/wmt_chrdev_wifi $(srctree)/$(src)/builtin/wlan_drv_gen4m
-	@printf '%s\n' 'obj-y += $(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wmt_drv/Makefile
-	@printf '%s\n' 'obj-y += $(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wmt_chrdev_wifi/Makefile
-	@printf '%s\n' 'obj-y += ../../$(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wlan_drv_gen4m/Makefile
+        # A $(subdir-y) entry is what expresses this: kbuild recurses into those
+        # directories in order, reading whatever Makefile it finds there.
+        # This runs while make parses the file, and kbuild only globs for
+        # directories *after* parsing it, so the stubs are in place before the
+        # directory list is resolved. (A recipe would be too late: kbuild adds
+        # subdir-y to a list with $(wildcard ...) during the same parse.)
+        $(shell rm -rf $(srctree)/$(src)/wmt_drv $(srctree)/$(src)/wmt_chrdev_wifi $(srctree)/$(src)/builtin)
+        $(shell ln -s $(ABS_PATH_TO_WMT_DRV)      $(srctree)/$(src)/wmt_drv)
+        $(shell ln -s $(ABS_PATH_TO_WLAN_CHR_DRV) $(srctree)/$(src)/wmt_chrdev_wifi)
+        $(shell mkdir -p $(srctree)/$(src)/builtin/wmt_drv $(srctree)/$(src)/builtin/wmt_chrdev_wifi $(srctree)/$(src)/builtin/wlan_drv_gen4m)
+        $(shell echo 'obj-y += $(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wmt_drv/Makefile)
+        $(shell echo 'obj-y += $(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wmt_chrdev_wifi/Makefile)
+        $(shell echo 'obj-y += ../../$(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wlan_drv_gen4m/Makefile)
 
         subdir-y += builtin/wmt_drv builtin/wmt_chrdev_wifi builtin/wlan_drv_gen4m
 
-        builtin/wmt_drv builtin/wmt_chrdev_wifi builtin/wlan_drv_gen4m: builtin_dirs
 
         # for gen4m options
         export CONFIG_MTK_COMBO_WIFI_HIF=axi
