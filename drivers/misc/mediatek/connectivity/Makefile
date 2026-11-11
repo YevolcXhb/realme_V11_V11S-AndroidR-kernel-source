@@ -88,24 +88,19 @@ endif
         # its object after the chip (wlan_drv_gen4m.o), so it gets a stub
         # directory whose Makefile the recipe below writes.
         #
-        # Whatever make left behind last time is cleared first: a stale .o from
-        # an unrelated source is worse than a rebuild. The recipes must come
-        # before the $(shell ...) line, because make expands prerequisites of an
-        # earlier rule before it ever runs a later one.
-        builtin_dir_links:
+        # kbuild checks its object list against the directories that already
+        # exist when it processes obj-y, and it executes a later rule's recipe
+        # before descending into that rule's directory -- so the stubs can be
+        # created from a recipe and still be picked up on the same run.
+        builtin_dirs:
 	@rm -rf $(srctree)/$(src)/wmt_drv $(srctree)/$(src)/wmt_chrdev_wifi $(srctree)/$(src)/wlan_drv_gen4m $(srctree)/$(src)/builtin
 	@ln -s $(ABS_PATH_TO_WMT_DRV)      $(srctree)/$(src)/wmt_drv
 	@ln -s $(ABS_PATH_TO_WLAN_CHR_DRV) $(srctree)/$(src)/wmt_chrdev_wifi
-
-        builtin_dir_stub: builtin_dir_links
+	@mkdir -p $(srctree)/$(src)/builtin
+	@printf '%s\n' 'obj-y += $(MODULE_NAME).o' > $(srctree)/$(src)/builtin/Makefile
 	@mkdir -p $(srctree)/$(src)/builtin/wlan_drv_gen4m
 	@printf '%s\n' 'obj-y += ../../$(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wlan_drv_gen4m/Makefile
 
-        # The directory setup above is deferred to recipes because kbuild parses
-        # every Makefile in a directory before it executes any recipe, so a
-        # $(shell ...) at parse time would run after the directory list had
-        # already been handed to the rules that need it.
-        $(info WLAN_DRV_BUILD_IN: vendor directories are prepared by recipes)
 
         # for gen4m options
         export CONFIG_MTK_COMBO_WIFI_HIF=axi
@@ -131,18 +126,10 @@ endif
         # Do build-in for xxx.c checking
         subdir-ccflags-y += -D MTK_WCN_REMOVE_KERNEL_MODULE
         subdir-ccflags-y += -D MTK_WCN_BUILT_IN_DRIVER
-        # common/ and wlan/adaptor each build a single object (wmt_drv.o and
-        # wmt_chrdev_wifi.o) that links their subdirectories in itself, so they
-        # are recursed into directly through the symlinks above. Gen4m names its
-        # object after WLAN_CHIP_ID (wlan_drv_gen4m.o) and has no Makefile at the
-        # directory root, hence the stub.
-        # The gen4m stub Makefile must exist before kbuild looks for it, so the
-        # directory is built through an intermediate that depends on a
-        # built-in recipe which materialises it. wmt_drv.o and wmt_chrdev_wifi.o
-        # are simply compiled here from the symlinked sources.
-        obj-y += builtin/
-        builtin-y := wmt_drv.o wmt_chrdev_wifi.o wlan_drv_gen4m/
-        builtin/wlan_drv_gen4m/: builtin_dir_stub
+        # wmt_drv.o and wmt_chrdev_wifi.o land in builtin/ through the stubs the
+        # recipe above writes; gen4m is compiled from builtin/wlan_drv_gen4m/,
+        # whose stub pulls ../../wlan_drv_gen4m.o in from the symlink target.
+        obj-y += builtin/ builtin/wlan_drv_gen4m/
 
         # For BT built-in mode start @{
         # ifneq (,$(filter $(CONFIG_MTK_COMBO_CHIP), "CONSYS_6885"))
