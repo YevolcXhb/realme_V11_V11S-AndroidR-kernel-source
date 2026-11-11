@@ -93,8 +93,9 @@ jobs:
         #
         # The runner's package mirror (azure.archive.ubuntu.com) has had DNS
         # outages that fail this step in minutes, before a line of kernel code
-        # compiles. Falling back to a pre-fetched .deb set published as a release
-        # asset keeps such an outage from blocking the kernel.
+        # compiles. The .deb set this build needs is published as a release
+        # asset, and that release is a draft on purpose: public release
+        # downloads 404 for this account, while the API path serves it.
         run: |
           set -uo pipefail
           echo "== apt update (best effort; outages are tolerated) =="
@@ -108,13 +109,15 @@ jobs:
           fi
 
           echo "::warning::runner mirror unusable; installing from the pre-fetched set"
-          DEPS_URL="${APT_DEPS_URL:-https://github.com/YevolcXhb/realme_V11_V11S-AndroidR-kernel-source/releases/download/aptdeps-jammy-amd64/hostdeps.tar.gz}"
           curl -fL --retry 10 --retry-delay 3 --retry-all-errors --connect-timeout 20 \
-            -o /tmp/hostdeps.tar.gz "$DEPS_URL"
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            -o /tmp/hostdeps.tar.gz \
+            https://api.github.com/repos/${{ github.repository }}/releases/assets/736113572
           mkdir -p /tmp/hostdeps
           tar -xzf /tmp/hostdeps.tar.gz -C /tmp/hostdeps
           ls /tmp/hostdeps | head
-          sudo dpkg -i /tmp/hostdeps/*.deb
+          sudo dpkg -i /tmp/hostdeps/*.deb || sudo dpkg -i /tmp/hostdeps/*.deb
           echo "== versions after install =="
           bc --version | head -1
           bison --version | head -1
