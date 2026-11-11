@@ -1,3 +1,9 @@
+# --- build this vendor stack as loadable modules ---------------------------
+ifneq ($(MTK_WIFI_AS_MODULE),)
+CONFIG_MTK_COMBO := m
+CONFIG_WLAN_DRV_BUILD_IN := n
+CONFIG_MTK_COMBO_WIFI := m
+endif
 MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
 ###############################################################################
 # Necessary Check

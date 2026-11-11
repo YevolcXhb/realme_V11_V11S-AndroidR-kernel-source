@@ -9,7 +9,9 @@
 #include <helio-dvfsrc-opp.h>
 
 #include "precomp.h"
+#if !CFG_SUPPORT_CONNINFRA
 #include "wmt_exp.h"
+#endif
 
 #ifdef CONFIG_MEDIATEK_EMI
 #include <memory/mediatek/emi.h>
@@ -194,7 +196,13 @@ void kalSetDrvEmiMpuProtection(phys_addr_t emiPhyBase, uint32_t offset,
 int32_t kalGetFwFlavor(uint8_t *flavor)
 {
 	int32_t ret = 1;
+#if CFG_SUPPORT_CONNINFRA
+	/* ADIE is owned by conninfra on SOC parts; the flavor check below only*/
+	/* distinguishes 0x6635, which this platform is not. */
+	const uint32_t adie_chip_id = 0;
+#else
 	const uint32_t adie_chip_id = mtk_wcn_wmt_ic_info_get(WMTCHIN_ADIE);
+#endif
 
 	DBGLOG(INIT, INFO, "adie_chip_id: 0x%x\n", adie_chip_id);
 
