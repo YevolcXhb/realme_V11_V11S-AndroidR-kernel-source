@@ -82,28 +82,23 @@ endif
         $(warning symbolic link to $(PATH_TO_WLAN_DRV))
 
         # ABS_PATH maps to .../connectivity/common, .../connectivity/wlan/adaptor
-        # and .../connectivity/wlan/core/gen4m, which kbuild cannot use as-is:
+        # and .../connectivity/wlan/core/gen4m. kbuild cannot take those
+        # directories as they are:
         #
-        #   * it enters a directory listed in obj-y only if that directory has a
-        #     Makefile, and gen4m has none at its root;
-        #   * obj-y then expects <dir>/built-in.o, but common/ and adaptor/ each
+        #   * it enters a directory listed in obj-y only when that directory has
+        #     a Makefile, and gen4m has none at its root;
+        #   * it then expects <dir>/built-in.o, but common/ and adaptor/ each
         #     emit one object (wmt_drv.o, wmt_chrdev_wifi.o) that links their
         #     sources in itself;
-        #   * entries are resolved relative to the directory being built, so a
-        #     path with ".." in it can never match.
+        #   * the names in obj-y are resolved against the directory being built,
+        #     and a ".." path never matches a real object.
         #
-        # So each vendor source is reached through a directory of its own that
-        # only states which object to build. kbuild resolves wmt_drv/,
-        # wmt_chrdev_wifi/ and wlan_drv_gen4m/ against the directory being
-        # built, and this Makefile is read more than once (as part of the
-        # directory's object list, and again from inside that directory), so
-        # that directory plus its one-line Makefile has to be in place before
-        # make starts. CI does it in "Stage vendor connectivity sources";
-        # AOSP gets the same effect by checking the links in, because the
-        # vendor Makefiles recreate them and would otherwise fail on a
-        # read-only tree.
-
-
+        # Each vendor source is therefore reached through a stub directory of
+        # its own holding exactly one line, "obj-y += <the object>". A symlink
+        # supplies the sources for the build and the one-line Makefile says what
+        # to link in. kbuild reads this Makefile in more than one mode, so the
+        # directories have to be there before make starts: CI creates them in
+        # "Stage vendor connectivity sources".
         obj-y += wmt_drv/ wmt_chrdev_wifi/ wlan_drv_gen4m/
 
         # for gen4m options
