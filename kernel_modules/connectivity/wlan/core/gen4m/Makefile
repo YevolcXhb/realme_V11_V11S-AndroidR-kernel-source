@@ -775,3 +775,8 @@ $(MODULE_NAME)-objs  += $(SMART_BW_DECISION_OBJS)
 ifneq ($(findstring UT_TEST_MODE,$(MTK_COMBO_CHIP)),)
 include $(src)/test/ut.make
 endif
+
+# --- adaptor headers --------------------------------------------------------
+# chips/soc3_0/soc3_0.c includes "fw_log_wifi.h", which ships with the adaptor.
+# WIFI_ADAPTOR_INCLUDE
+ccflags-y += -I$(srctree)/../vendor/mediatek/kernel_modules/connectivity/wlan/adaptor
