@@ -1,0 +1,13 @@
+[Unit]
+Description=Wi-Fi connect (%I)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/wifi-connect.sh %I
+TimeoutSec=180
+
+[Install]
+WantedBy=multi-user.target

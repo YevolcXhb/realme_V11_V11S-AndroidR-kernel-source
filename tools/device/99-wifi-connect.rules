@@ -1,0 +1,2 @@
+# Start the Wi-Fi connection service as soon as a wlan interface shows up.
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlan0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="wifi-connect@wlan0.service"

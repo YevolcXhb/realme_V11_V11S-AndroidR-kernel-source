@@ -103,7 +103,7 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
 ###############################################################################
 
 
-ccflags-y += -Werror
+ccflags-y += -Wno-error
 
 ifneq ($(filter "MT6628",$(CONFIG_MTK_COMBO_CHIP)),)
     ccflags-y += -D MT6628
@@ -303,3 +303,5 @@ ccflags-y += -I$(src)/test/include
 endif
 
 endif
+ccflags-y += -Wno-error=strict-prototypes
+ccflags-y += -Wno-error=missing-prototypes

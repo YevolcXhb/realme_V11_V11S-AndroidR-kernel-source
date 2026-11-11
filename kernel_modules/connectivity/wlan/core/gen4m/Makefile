@@ -86,7 +86,7 @@ ccflags-y += -DWLAN_INCLUDE_PROC
 ccflags-y += -DCFG_SUPPORT_AGPS_ASSIST=0
 ccflags-y += -DCFG_SUPPORT_TSF_USING_BOOTTIME=1
 ccflags-y += -DARP_MONITER_ENABLE=1
-ccflags-y += -Werror
+ccflags-y += -Wno-error
 #ccflags-y:=$(filter-out -U$(WLAN_CHIP_ID),$(ccflags-y))
 #ccflags-y += -DLINUX -D$(WLAN_CHIP_ID)
 #workaround: also needed for none LINUX system
@@ -780,3 +780,7 @@ endif
 # chips/soc3_0/soc3_0.c includes "fw_log_wifi.h", which ships with the adaptor.
 # WIFI_ADAPTOR_INCLUDE
 ccflags-y += -I$(srctree)/../vendor/mediatek/kernel_modules/connectivity/wlan/adaptor
+
+ccflags-y += -I$(src)/../../../common/common_main/include
+ccflags-y += -I$(src)/../../../common/common_main/linux/include
+ccflags-y += -I$(src)/../../adaptor

@@ -109,13 +109,17 @@ jobs:
           # name: wmtd_thread" -> "WMT turn on WIFI fail").
           export MTK_COMBO_CHIP=CONNAC MTK_PLATFORM_ID=6833 WLAN_CHIP_ID=6833 WIFI_IP_SET=1
           export CONFIG_MTK_COMBO_WIFI_HIF=axi MTK_ANDROID_WMT=y MTK_ANDROID_EMI=y ADAPTOR_OPTS=CONNAC
+          # MTK_PLATFORM=mt6833 is load-bearing: the kernel Makefile exports
+          # MTK_PLATFORM from CONFIG_MTK_PLATFORM (mt6853 in this tree), which would
+          # pull platform/mt6853.c into wmt_drv instead of platform/mt6833.c.
+          # Only a command-line variable beats that export.
           export MTK_WIFI_AS_MODULE=1
           FORCE="CONFIG_MTK_COMBO=m CONFIG_MTK_COMBO_WIFI=m CONFIG_WLAN_DRV_BUILD_IN=n CONFIG_MTK_WIFI_ONLY=n CONFIG_MTK_WIFI_CONNINFRA_SUPPORT=n"
           mk() {
             echo "==== $1 ===="
             make -j"$(nproc)" O=out ARCH=arm64 CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
               CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" HOSTCC=gcc-9 HOSTCXX=g++-9 \
-              KCFLAGS="-DOPLUS_MT6833_POWERINFO_STANDBY" KBUILD_MODPOST_WARN=1 $FORCE \
+              KCFLAGS="-DOPLUS_MT6833_POWERINFO_STANDBY -Wno-error" KBUILD_MODPOST_WARN=1 MTK_PLATFORM=mt6833 $FORCE \
               M="$2" modules 2>&1 | tee "$3"
             echo "---- $1 tail ----"
             grep -E "MODPOST|LD \[M\]|CC \[M\]|error" "$3" | tail -8 || true
@@ -129,8 +133,8 @@ jobs:
           # other two modules stay on CONNAC, which is how the ROM builds them.
           make -j"$(nproc)" O=out ARCH=arm64 CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
             CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" HOSTCC=gcc-9 HOSTCXX=g++-9 \
-            KCFLAGS="-DOPLUS_MT6833_POWERINFO_STANDBY" KBUILD_MODPOST_WARN=1 $FORCE \
-            CONFIG_MTK_COMBO_CHIP="CONSYS_6833" \
+            KCFLAGS="-DOPLUS_MT6833_POWERINFO_STANDBY -Wno-error" KBUILD_MODPOST_WARN=1 MTK_PLATFORM=mt6833 $FORCE \
+            CONFIG_MTK_COMBO_CHIP="CONSYS_6833" MTK_PLATFORM=mt6833 \
             M="$PWD/kernel_modules/connectivity/common" modules 2>&1 | tee mtk_wmt.log
           grep -E "MODPOST|LD \[M\]" mtk_wmt.log | tail -3 || true
           mk wmt_chrdev_wifi "$PWD/kernel_modules/connectivity/wlan/adaptor" mtk_chr.log
