@@ -104,7 +104,7 @@ endif
         # read-only tree.
 
 
-        subdir-y += wmt_drv wmt_chrdev_wifi wlan_drv_gen4m
+        obj-y += wmt_drv/ wmt_chrdev_wifi/ wlan_drv_gen4m/
 
         # for gen4m options
         export CONFIG_MTK_COMBO_WIFI_HIF=axi
