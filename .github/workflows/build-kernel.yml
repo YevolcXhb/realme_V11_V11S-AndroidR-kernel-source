@@ -86,51 +86,42 @@ jobs:
           fetch-depth: 1
 
       - name: Install host packages
-        # libssl-dev: scripts/sign-file + extract-cert link against -lcrypto
-        #   (defconfig has CONFIG_MODULE_SIG=y).
-        # gcc-9: the shipped scripts/dtc/*.c_shipped define yylloc without
-        #   extern; gcc-10+ (default -fno-common) makes that a duplicate
-        #   symbol error. gcc-9 keeps -fcommon on.
-        # bc/bison/flex/cpio: standard 4.14 build deps.
+        # cc/bison/flex/cpio/libssl-dev/gcc-9/g++-9 are needed by the 4.14 build:
+        #   libssl-dev: scripts/sign-file + extract-cert link against -lcrypto
+        #   gcc-9: scripts/dtc/*.c_shipped define yylloc without extern, which
+        #     gcc-10+ rejects under -fno-common
         #
-        # Package indexes are flaky on these runners: the baked-in Azure mirror
-        # has had DNS outages and apt's own retry gives up quickly. So the repo
-        # metadata is fetched with curl, which honours the runner's HTTP(S)_PROXY
-        # and can be told to keep retrying until it succeeds.
+        # The runner's package mirror (azure.archive.ubuntu.com) has had DNS
+        # outages that fail this step in minutes, before a line of kernel code
+        # compiles. Falling back to a pre-fetched .deb set published as a release
+        # asset keeps such an outage from blocking the kernel.
         run: |
           set -uo pipefail
-          MIRROR="${APT_MIRROR:-http://archive.ubuntu.com/ubuntu}"
-          DEST=/var/lib/apt/lists
-          . /etc/os-release
-          SUITE="${VERSION_CODENAME:-jammy}"
-
-          fetch_index() {
-            local suite="$1" comp="$2" d
-            d="$DEST/http_archive_ubuntu_com_ubuntu-ports_dists_${suite}_${comp}_binary-amd64"
-            d="$DEST/$(echo "$MIRROR/dists/$suite/$comp/binary-amd64" | sed 's#http://##; s#https://##; s#/#_#g')"
-            sudo mkdir -p "$d"
-            sudo curl -fsSL --retry 20 --retry-delay 5 --retry-all-errors --connect-timeout 15 \
-              -o "$d/Packages" "$MIRROR/dists/$suite/$comp/binary-amd64/Packages" \
-              || { echo "::warning::index unavailable: $suite/$comp"; return 1; }
-            echo "fetched $suite/$comp"
-            return 0
-          }
-
-          for attempt in 1 2 3 4 5 6; do
-            ok=1
-            for comp in main universe; do
-              fetch_index "$SUITE" "$comp" || ok=0
-            done
-            [ "$ok" = 1 ] && break
-            echo "::warning::indexes still unavailable (attempt $attempt)"
-            sleep 30
-          done
+          echo "== apt update (best effort; outages are tolerated) =="
           sudo apt-get update || true
 
-          sudo apt-get install -y --no-install-recommends \
-            bc bison flex cpio libssl-dev gcc-9 g++-9 \
-            || sudo apt-get install -y --fix-missing --no-install-recommends \
-                 bc bison flex cpio libssl-dev gcc-9 g++-9
+          echo "== primary install =="
+          if sudo -E apt-get install -y --no-install-recommends \
+               bc bison flex cpio libssl-dev gcc-9 g++-9; then
+            echo "installed from the runner mirror"
+            exit 0
+          fi
+
+          echo "::warning::runner mirror unusable; installing from the pre-fetched set"
+          DEPS_URL="${APT_DEPS_URL:-https://github.com/YevolcXhb/realme_V11_V11S-AndroidR-kernel-source/releases/download/aptdeps-jammy-amd64/hostdeps.tar.gz}"
+          curl -fL --retry 10 --retry-delay 3 --retry-all-errors --connect-timeout 20 \
+            -o /tmp/hostdeps.tar.gz "$DEPS_URL"
+          mkdir -p /tmp/hostdeps
+          tar -xzf /tmp/hostdeps.tar.gz -C /tmp/hostdeps
+          ls /tmp/hostdeps | head
+          sudo dpkg -i /tmp/hostdeps/*.deb
+          echo "== versions after install =="
+          bc --version | head -1
+          bison --version | head -1
+          flex --version
+          cpio --version | head -1
+          gcc-9 --version | head -1
+          g++-9 --version | head -1
 
       - name: Cache toolchains
         id: tc
