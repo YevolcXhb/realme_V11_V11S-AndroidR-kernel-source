@@ -157,9 +157,18 @@ jobs:
           ln -s "$VENDOR/common"        "$CONN/wmt_drv"
           ln -s "$VENDOR/wlan/adaptor"  "$CONN/wmt_chrdev_wifi"
           ln -s "$VENDOR/wlan/core/gen4m" "$CONN/wlan_drv_gen4m"
-          echo 'obj-y += wmt_drv.o'          > "$CONN/wmt_drv/Makefile"
-          echo 'obj-y += wmt_chrdev_wifi.o'  > "$CONN/wmt_chrdev_wifi/Makefile"
-          echo 'obj-y += wlan_drv_gen4m.o'   > "$CONN/wlan_drv_gen4m/Makefile"
+          # Each stub forwards the one object its vendor build produces. The
+          # Kbuild files are separate because they are read through -include:
+          # Makefile.build resolves obj-y names against $(obj), that is, the
+          # directory being built, and a ".." path never matches.
+          stub() {
+            dir="$1"; obj="$2"
+            echo "obj-y += $obj" > "$CONN/$dir/Kbuild"
+            echo "include \$(srctree)/\$(src)/Kbuild" > "$CONN/$dir/Makefile"
+          }
+          stub wmt_drv          wmt_drv.o
+          stub wmt_chrdev_wifi  wmt_chrdev_wifi.o
+          stub wlan_drv_gen4m   wlan_drv_gen4m.o
           ls -la "$CONN"/wmt_drv "$CONN"/wmt_chrdev_wifi "$CONN"/wlan_drv_gen4m
           echo "wlan stub directories staged"
 
