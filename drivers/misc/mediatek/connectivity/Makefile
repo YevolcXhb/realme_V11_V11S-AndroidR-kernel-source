@@ -97,9 +97,19 @@ endif
         # vendor directory. AOSP builds solve the same problem by making those
         # directories read-only, because the vendor Makefiles insist on
         # re-creating these links themselves.
-        WMT_DRV_PATH     := $(srctree)/$(src)/wmt_drv
-        WMT_CHR_DRV_PATH := $(srctree)/$(src)/wmt_chrdev_wifi
-        WLAN_DRV_PATH    := $(srctree)/$(src)/wlan_drv_gen4m
+        # D := $(srctree)/$(src) is only correct while kbuild parses this file
+        # from the kernel root; inside a subdirectory $(srctree) already ends in
+        # that directory, which is why the vendor-object wrapper above failed
+        # with "cannot create ../drivers/.../Makefile: Directory nonexistent".
+        # LOCAL_SRC resolves relative to src/ itself and is therefore stable no
+        # matter where this Makefile is read from. SRC_ABS derives an absolute
+        # path from $(CURDIR), which kbuild sets to the directory being built.
+        LOCAL_SRC := $(patsubst $(srctree)/%,%,$(src))
+        SRC_ABS   := $(CURDIR)/$(if $(LOCAL_SRC),$(LOCAL_SRC),.)
+
+        WMT_DRV_PATH     := $(SRC_ABS)/wmt_drv
+        WMT_CHR_DRV_PATH := $(SRC_ABS)/wmt_chrdev_wifi
+        WLAN_DRV_PATH    := $(SRC_ABS)/wlan_drv_gen4m
 
         $(shell rm -f $(WMT_DRV_PATH) $(WMT_CHR_DRV_PATH) $(WLAN_DRV_PATH))
         $(shell ln -s $(ABS_PATH_TO_WMT_DRV)      $(WMT_DRV_PATH))
@@ -112,6 +122,7 @@ endif
         $(shell echo 'obj-y += wmt_drv.o' > $(WMT_DRV_PATH)/Makefile)
         $(shell echo 'obj-y += wmt_chrdev_wifi.o' > $(WMT_CHR_DRV_PATH)/Makefile)
         $(shell echo 'obj-y += wlan_drv_gen4m.o' > $(WLAN_DRV_PATH)/Makefile)
+        $(info WLAN_DRV_BUILD_IN: paths wmt=$(WMT_DRV_PATH))
 
         subdir-y += wmt_drv wmt_chrdev_wifi wlan_drv_gen4m
 
