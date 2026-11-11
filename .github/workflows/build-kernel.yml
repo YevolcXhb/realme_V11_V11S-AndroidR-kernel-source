@@ -415,6 +415,12 @@ jobs:
           mkdir -p "$PWD/../vendor/mediatek"
           ln -sfn "$PWD/kernel_modules" "$PWD/../vendor/mediatek/kernel_modules"
 
+          # The vendor Makefiles branch on CONFIG_* values taken from .config.
+          # Passing them on the command line is the only way to be sure they are
+          # visible inside an out-of-tree module build: a command-line variable
+          # overrides everything and survives kbuild's recursive make calls.
+          FORCE_VARS="CONFIG_MTK_COMBO=m CONFIG_MTK_COMBO_WIFI=m CONFIG_WLAN_DRV_BUILD_IN=n CONFIG_MTK_WIFI_ONLY=n"
+
           mk() {
             echo "==== $1 ===="
             make -j"$(nproc)" O=out ARCH=arm64 \
@@ -422,8 +428,10 @@ jobs:
               CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" \
               HOSTCC=gcc-9 HOSTCXX=g++-9 \
               KCFLAGS="-DOPLUS_MT6833_POWERINFO_STANDBY" \
-              KBUILD_MODPOST_WARN=1 \
+              KBUILD_MODPOST_WARN=1 $FORCE_VARS \
               M="$2" modules 2>&1 | tee -a "$3"
+            echo "---- $1 result ----"
+            grep -E 'MODPOST|LD \[M\]|CC \[M\]' "$3" | tail -5 || true
           }
 
           echo "auto.conf COMBO values:"
