@@ -1,3 +1,13 @@
+# --- build this vendor stack as loadable modules ---------------------------
+# CONFIG_MTK_COMBO_WIFI=y in this kernel makes the line below emit obj-y, and
+# CONFIG_WLAN_DRV_BUILD_IN=y makes common/ and adaptor/ do the same, which an
+# out-of-tree "make M=..." cannot turn into .ko files. Exporting
+# MTK_WIFI_AS_MODULE forces the object lists back to obj-m for this build only;
+# nothing in vmlinux changes.
+ifneq ($(MTK_WIFI_AS_MODULE),)
+CONFIG_WLAN_DRV_BUILD_IN := n
+CONFIG_MTK_COMBO_WIFI := m
+endif
 ###############################################################################
 # Necessary Check
 

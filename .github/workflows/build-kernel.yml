@@ -410,6 +410,7 @@ jobs:
           export MTK_ANDROID_WMT=y
           export MTK_ANDROID_EMI=y
           export ADAPTOR_OPTS=CONNAC
+          export MTK_WIFI_AS_MODULE=1
 
           mkdir -p "$PWD/../vendor/mediatek"
           ln -sfn "$PWD/kernel_modules" "$PWD/../vendor/mediatek/kernel_modules"
@@ -425,6 +426,10 @@ jobs:
               M="$2" modules 2>&1 | tee -a "$3"
           }
 
+          echo "auto.conf COMBO values:"
+          grep -E "^CONFIG_(MTK_COMBO|MTK_COMBO_WIFI|WLAN_DRV_BUILD_IN|MTK_WIFI_ONLY)=" out/.config || true
+          make -s O=out ARCH=arm64 M="$PWD/kernel_modules/connectivity/common" \
+            MTK_WIFI_AS_MODULE=1 kernelrelease 2>/dev/null | head -1 || true
           mk wmt_drv "$PWD/kernel_modules/connectivity/common" mtk_wmt.log
           mk wmt_chrdev_wifi "$PWD/kernel_modules/connectivity/wlan/adaptor" mtk_chr.log
           mk wlan_drv_gen4m "$PWD/kernel_modules/connectivity/wlan/core/gen4m" mtk_wlan.log
