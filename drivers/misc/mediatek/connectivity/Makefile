@@ -93,7 +93,9 @@ endif
         #     the Makefile kbuild wants to find when it descends.
         #
         # A $(subdir-y) entry is what expresses this: kbuild recurses into those
-        # directories in order, reading whatever Makefile it finds there.
+        # directories in order, reading whatever Makefile it finds there. The
+        # object names are spelled out rather than taken from $(MODULE_NAME),
+        # which at this point still holds connadp from the adapter above.
         # This runs while make parses the file, and kbuild only globs for
         # directories *after* parsing it, so the stubs are in place before the
         # directory list is resolved. (A recipe would be too late: kbuild adds
@@ -102,9 +104,9 @@ endif
         $(shell ln -s $(ABS_PATH_TO_WMT_DRV)      $(srctree)/$(src)/wmt_drv)
         $(shell ln -s $(ABS_PATH_TO_WLAN_CHR_DRV) $(srctree)/$(src)/wmt_chrdev_wifi)
         $(shell mkdir -p $(srctree)/$(src)/builtin/wmt_drv $(srctree)/$(src)/builtin/wmt_chrdev_wifi $(srctree)/$(src)/builtin/wlan_drv_gen4m)
-        $(shell echo 'obj-y += $(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wmt_drv/Makefile)
-        $(shell echo 'obj-y += $(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wmt_chrdev_wifi/Makefile)
-        $(shell echo 'obj-y += ../../$(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wlan_drv_gen4m/Makefile)
+        $(shell echo 'obj-y += wmt_drv.o' > $(srctree)/$(src)/builtin/wmt_drv/Makefile)
+        $(shell echo 'obj-y += wmt_chrdev_wifi.o' > $(srctree)/$(src)/builtin/wmt_chrdev_wifi/Makefile)
+        $(shell echo 'obj-y += ../../wlan_drv_gen4m.o' > $(srctree)/$(src)/builtin/wlan_drv_gen4m/Makefile)
 
         subdir-y += builtin/wmt_drv builtin/wmt_chrdev_wifi builtin/wlan_drv_gen4m
 
