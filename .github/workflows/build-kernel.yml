@@ -129,6 +129,22 @@ jobs:
           test -x "$GCC_BIN/${CROSS_COMPILE}as" || { echo "missing ${CROSS_COMPILE}as (needed: -no-integrated-as)"; exit 1; }
           echo "toolchains ok"
 
+      # The gen4m Makefile reaches its siblings through
+      # $(srctree)/../vendor/mediatek/kernel_modules, the AOSP directory layout.
+      # This repo keeps the same sources under <repo>/kernel_modules, and
+      # CONFIG_WLAN_DRV_BUILD_IN symlinks them into
+      # drivers/misc/mediatek/connectivity while kbuild parses that Makefile.
+      # So the path has to exist before "make" starts, not merely before the
+      # standalone gen4m module build further down.
+      - name: Stage vendor connectivity sources
+        run: |
+          set -euo pipefail
+          mkdir -p "$PWD/../vendor/mediatek"
+          ln -sfn "$PWD/kernel_modules" "$PWD/../vendor/mediatek/kernel_modules"
+          test -r "$PWD/../vendor/mediatek/kernel_modules/connectivity/common/common_main/include/wmt_exp.h"
+          test -d "$PWD/../vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m"
+          echo "vendor connectivity tree staged"
+
       - name: Build
         run: |
           set -euo pipefail

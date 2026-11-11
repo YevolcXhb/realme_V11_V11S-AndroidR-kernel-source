@@ -317,6 +317,28 @@ config MTK_COMBO_WIFI
 	select WIRELESS_EXT
 	select WEXT_PRIV
 
+config WLAN_DRV_BUILD_IN
+	bool "Build the MediaTek WLAN driver stack into the kernel"
+	depends on MTK_COMBO && MTK_COMBO_WIFI
+	help
+	  The Wi-Fi stack for CONSYS parts lives outside this kernel tree, in
+	  vendor/mediatek/kernel_modules/connectivity: wmt_drv and
+	  wmt_chrdev_wifi in common/, wlan_drv_gen4m in wlan/{adaptor,core/gen4m}.
+	  Android ships them as signed .ko files built against the OEM config, and
+	  those refuse to load here: this kernel's .config differs, so their
+	  MODVERSIONS CRCs no longer match ("disagrees about version of symbol
+	  module_layout").
+
+	  Answering this symbol links those three directories into
+	  drivers/misc/mediatek/connectivity/ and builds them into vmlinux, so the
+	  stack is compiled against this exact configuration and needs no .ko
+	  loading at all. The build needs vendor/mediatek/kernel_modules to be
+	  reachable from the source root, which the CI stages before building.
+
+	  Firmware is still loaded at run time: the driver asks for
+	  WIFI_RAM_CODE_soc*/soc*_ram_wifi* through request_firmware(), and this
+	  boot's cmdline sets firmware_class.path=/vendor/firmware.
+
 config MTK_PASSPOINT_R1_SUPPORT
 	bool "MTK_PASSPOINT_R1_SUPPORT"
 	depends on MTK_COMBO_WIFI
