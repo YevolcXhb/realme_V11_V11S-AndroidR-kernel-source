@@ -93,47 +93,44 @@ jobs:
         #   symbol error. gcc-9 keeps -fcommon on.
         # bc/bison/flex/cpio: standard 4.14 build deps.
         #
-        # The runner's Azure mirror has outages that leave azure.archive.ubuntu.com
-        # unresolvable and abort the job before anything compiles, so the apt
-        # update is attempted a few times before the install runs.
+        # Package indexes are flaky on these runners: the baked-in Azure mirror
+        # has had DNS outages and apt's own retry gives up quickly. So the repo
+        # metadata is fetched with curl, which honours the runner's HTTP(S)_PROXY
+        # and can be told to keep retrying until it succeeds.
         run: |
           set -uo pipefail
-          # The runner's baked-in mirror file points at azure.archive.ubuntu.com.
-          # When that name stops resolving, every apt call fails no matter how
-          # often it is retried, so drop the mirror file and point the sources
-          # at archive.ubuntu.com up front. Being in Azure, that host usually
-          # answers; if this particular outage affects it too, the retries below
-          # still apply.
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            echo "::warning::dropping the runner mirror file before installing"
-            sudo cp /etc/apt/apt-mirrors.txt /tmp/apt-mirrors.txt.bak || true
-            sudo rm -f /etc/apt/apt-mirrors.txt
-          fi
-          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
-            [ -f "$f" ] || continue
-            case "$f" in
-              *.bak|*.save) continue ;;
-            esac
-            if grep -qE 'azure\.archive\.ubuntu\.com|mirror\+file' "$f"; then
-              sudo sed -i -E \
-                -e 's#mirror\+file:[^ ]*#http://archive.ubuntu.com/ubuntu#g' \
-                -e 's#http://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
-                -e 's#https://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
-                "$f"
-              echo "rewrote $f"
-            fi
+          MIRROR="${APT_MIRROR:-http://archive.ubuntu.com/ubuntu}"
+          DEST=/var/lib/apt/lists
+          . /etc/os-release
+          SUITE="${VERSION_CODENAME:-jammy}"
+
+          fetch_index() {
+            local suite="$1" comp="$2" d
+            d="$DEST/http_archive_ubuntu_com_ubuntu-ports_dists_${suite}_${comp}_binary-amd64"
+            d="$DEST/$(echo "$MIRROR/dists/$suite/$comp/binary-amd64" | sed 's#http://##; s#https://##; s#/#_#g')"
+            sudo mkdir -p "$d"
+            sudo curl -fsSL --retry 20 --retry-delay 5 --retry-all-errors --connect-timeout 15 \
+              -o "$d/Packages" "$MIRROR/dists/$suite/$comp/binary-amd64/Packages" \
+              || { echo "::warning::index unavailable: $suite/$comp"; return 1; }
+            echo "fetched $suite/$comp"
+            return 0
+          }
+
+          for attempt in 1 2 3 4 5 6; do
+            ok=1
+            for comp in main universe; do
+              fetch_index "$SUITE" "$comp" || ok=0
+            done
+            [ "$ok" = 1 ] && break
+            echo "::warning::indexes still unavailable (attempt $attempt)"
+            sleep 30
           done
-          sudo apt-get update
-          for i in 1 2 3; do
-            if sudo apt-get install -y --no-install-recommends \
-                 bc bison flex cpio libssl-dev gcc-9 g++-9; then
-              exit 0
-            fi
-            echo "::warning::apt install attempt $i failed, retrying after update"
-            sleep 20
-            sudo apt-get update || true
-          done
-          exit 1
+          sudo apt-get update || true
+
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex cpio libssl-dev gcc-9 g++-9 \
+            || sudo apt-get install -y --fix-missing --no-install-recommends \
+                 bc bison flex cpio libssl-dev gcc-9 g++-9
 
       - name: Cache toolchains
         id: tc
