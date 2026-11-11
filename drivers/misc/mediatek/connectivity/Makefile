@@ -142,8 +142,8 @@ endif
         subdir-ccflags-y += -D MTK_WCN_BUILT_IN_DRIVER
         # The stub directories above hold nothing but a Makefile, so they are
         # ordered prerequisites rather than object lists of their own.
-        obj-y += builtin/wmt_drv/builtin.o builtin/wmt_chrdev_wifi/builtin.o \
-                 builtin/wlan_drv_gen4m/builtin.o
+        obj-y += builtin/wmt_drv/built-in.o builtin/wmt_chrdev_wifi/built-in.o \
+                 builtin/wlan_drv_gen4m/built-in.o
 
         # For BT built-in mode start @{
         # ifneq (,$(filter $(CONFIG_MTK_COMBO_CHIP), "CONSYS_6885"))
