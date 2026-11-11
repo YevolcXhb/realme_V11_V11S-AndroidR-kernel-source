@@ -107,10 +107,10 @@ jobs:
           # CONNAC leaves CFG_ANDORID_CONNINFRA_SUPPORT=0, so power-on goes through the
           # legacy wmt_lib queues that the conninfra stack never starts ("Queue is NULL,
           # name: wmtd_thread" -> "WMT turn on WIFI fail").
-          export MTK_COMBO_CHIP=CONNAC2X2_SOC3_0 MTK_PLATFORM_ID=6833 WLAN_CHIP_ID=6833 WIFI_IP_SET=1
-          export CONFIG_MTK_COMBO_WIFI_HIF=axi MTK_ANDROID_WMT=y MTK_ANDROID_EMI=y ADAPTOR_OPTS=CONNAC2X2_SOC3_0
+          export MTK_PLATFORM_ID=6833 WLAN_CHIP_ID=6833 WIFI_IP_SET=1
+          export CONFIG_MTK_COMBO_WIFI_HIF=axi MTK_ANDROID_WMT=y MTK_ANDROID_EMI=y ADAPTOR_OPTS=CONNAC
           export MTK_WIFI_AS_MODULE=1
-          FORCE="CONFIG_MTK_COMBO=m CONFIG_MTK_COMBO_WIFI=m CONFIG_WLAN_DRV_BUILD_IN=n CONFIG_MTK_WIFI_ONLY=n CONFIG_MTK_WIFI_CONNINFRA_SUPPORT=y"
+          FORCE="CONFIG_MTK_COMBO=m CONFIG_MTK_COMBO_WIFI=m CONFIG_WLAN_DRV_BUILD_IN=n CONFIG_MTK_WIFI_ONLY=n CONFIG_MTK_WIFI_CONNINFRA_SUPPORT=n"
           mk() {
             echo "==== $1 ===="
             make -j"$(nproc)" O=out ARCH=arm64 CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
@@ -124,6 +124,7 @@ jobs:
           # into this kernel (mtk_wcn_conninfra_* in System.map); there is no wmt_drv
           # module in this configuration and no conninfra.ko to load - the vendor
           # conninfra tree has no platform/mt6833 to build against anyway.
+          mk wmt_drv "$PWD/kernel_modules/connectivity/common" mtk_wmt.log
           mk wmt_chrdev_wifi "$PWD/kernel_modules/connectivity/wlan/adaptor" mtk_chr.log
           mk wlan_drv_gen4m "$PWD/kernel_modules/connectivity/wlan/core/gen4m" mtk_wlan.log
           echo "== .ko files =="
