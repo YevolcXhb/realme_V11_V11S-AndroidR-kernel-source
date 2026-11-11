@@ -136,7 +136,7 @@ jobs:
           mk wmt_chrdev_wifi "$PWD/kernel_modules/connectivity/wlan/adaptor" mtk_chr.log
           mk wlan_drv_gen4m "$PWD/kernel_modules/connectivity/wlan/core/gen4m" mtk_wlan.log
           echo "== .ko files =="
-          find kernel_modules -name '*.ko' | sort | tee mtk_modules.txt
+          find kernel_modules out -name '*.ko' 2>/dev/null | sort | tee mtk_modules.txt
           while read -r f; do modinfo "$f" | grep -E "^(filename|vermagic|depends|name):" || true; done < mtk_modules.txt
 
       - name: Upload modules
@@ -149,5 +149,6 @@ jobs:
           if-no-files-found: warn
           path: |
             kernel_modules/**/*.ko
+            out/**/*.ko
             mtk_*.log
             mtk_modules.txt
