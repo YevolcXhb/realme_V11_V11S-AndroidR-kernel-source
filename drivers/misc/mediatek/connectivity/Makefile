@@ -93,13 +93,13 @@ endif
         # before the $(shell ...) line, because make expands prerequisites of an
         # earlier rule before it ever runs a later one.
         builtin_dir_links:
-        	@rm -rf $(srctree)/$(src)/wmt_drv $(srctree)/$(src)/wmt_chrdev_wifi $(srctree)/$(src)/wlan_drv_gen4m $(srctree)/$(src)/builtin
-        	@ln -s $(ABS_PATH_TO_WMT_DRV)      $(srctree)/$(src)/wmt_drv
-        	@ln -s $(ABS_PATH_TO_WLAN_CHR_DRV) $(srctree)/$(src)/wmt_chrdev_wifi
+	@rm -rf $(srctree)/$(src)/wmt_drv $(srctree)/$(src)/wmt_chrdev_wifi $(srctree)/$(src)/wlan_drv_gen4m $(srctree)/$(src)/builtin
+	@ln -s $(ABS_PATH_TO_WMT_DRV)      $(srctree)/$(src)/wmt_drv
+	@ln -s $(ABS_PATH_TO_WLAN_CHR_DRV) $(srctree)/$(src)/wmt_chrdev_wifi
 
         builtin_dir_stub: builtin_dir_links
-        	@mkdir -p $(srctree)/$(src)/builtin/wlan_drv_gen4m
-        	@printf '%s\n' 'obj-y += ../../$(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wlan_drv_gen4m/Makefile
+	@mkdir -p $(srctree)/$(src)/builtin/wlan_drv_gen4m
+	@printf '%s\n' 'obj-y += ../../$(MODULE_NAME).o' > $(srctree)/$(src)/builtin/wlan_drv_gen4m/Makefile
 
         # The directory setup above is deferred to recipes because kbuild parses
         # every Makefile in a directory before it executes any recipe, so a
