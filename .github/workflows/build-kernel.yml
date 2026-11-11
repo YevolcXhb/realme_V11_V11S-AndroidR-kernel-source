@@ -87,10 +87,20 @@ jobs:
 
       - name: Install host packages
         run: |
-          # GitHub's Azure mirror has been intermittently failing DNS for
-          # azure.archive.ubuntu.com, which killed whole builds at this step.
-          # Retry the update once; the package install itself is idempotent.
-          sudo apt-get update || { sleep 20; sudo apt-get update; }
+          # GitHub's runner mirror (azure.archive.ubuntu.com) has been failing
+          # DNS for stretches of time, which killed whole builds at this step
+          # before any code compiled. Fall back to a reachable mirror when the
+          # default one cannot be resolved, and retry the update once.
+          for i in 1 2 3; do
+            if sudo apt-get update; then break; fi
+            if ! getent hosts azure.archive.ubuntu.com; then
+              echo "runner mirror unresolvable; switching to archive.ubuntu.com"
+              sudo sed -i -E 's#https?://[a-z.]*archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
+                /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+              sudo rm -f /etc/apt/apt-mirrors.txt
+            fi
+            sleep 15
+          done
           # libssl-dev: scripts/sign-file + extract-cert link against -lcrypto
           #   (defconfig has CONFIG_MODULE_SIG=y).
           # gcc-9: the shipped scripts/dtc/*.c_shipped define `yylloc` without
