@@ -382,6 +382,75 @@ jobs:
             M="$PWD/kernel_modules/connectivity/wlan/core/gen4m" \
             modules 2>&1 | tee module.log
 
+      # MediaTek Wi-Fi: build the vendor stack as modules against this kernel's
+      # exact configuration.
+      #
+      # Android ships wmt_drv / wmt_chrdev_wifi / wlan_drv_gen4m as signed .ko
+      # files built against the OEM .config. This kernel's .config differs (IPC_NS
+      # and friends for containers, MDDP off), which moves the MODVERSIONS CRCs,
+      # so those prebuilt modules refuse to load and MODULE_SIG_FORCE leaves no
+      # override. Rebuilding the same sources against out/.config gives modules
+      # whose CRCs match this kernel by construction.
+      #
+      # Only the sources under kernel_modules are used, which is what the
+      # out-of-tree module build is for; nothing is added to vmlinux.
+      - name: Build MediaTek WiFi modules
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          TOOLS="$PWD/toolchains"
+          export PATH="$TOOLS/clang-r383902/bin:$TOOLS/gcc-aarch64-linux-android-4.9/bin:$PATH"
+          export LD_LIBRARY_PATH="$TOOLS/clang-r383902/lib64:${LD_LIBRARY_PATH:-}"
+
+          export MTK_COMBO_CHIP=CONNAC
+          export MTK_PLATFORM_ID=6833
+          export WLAN_CHIP_ID=6833
+          export WIFI_IP_SET=1
+          export CONFIG_MTK_COMBO_WIFI_HIF=axi
+          export MTK_ANDROID_WMT=y
+          export MTK_ANDROID_EMI=y
+          export ADAPTOR_OPTS=CONNAC
+
+          mkdir -p "$PWD/../vendor/mediatek"
+          ln -sfn "$PWD/kernel_modules" "$PWD/../vendor/mediatek/kernel_modules"
+
+          mk() {
+            echo "==== $1 ===="
+            make -j"$(nproc)" O=out ARCH=arm64 \
+              CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
+              CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" \
+              HOSTCC=gcc-9 HOSTCXX=g++-9 \
+              KCFLAGS="-DOPLUS_MT6833_POWERINFO_STANDBY" \
+              KBUILD_MODPOST_WARN=1 \
+              M="$2" modules 2>&1 | tee -a "$3"
+          }
+
+          mk wmt_drv "$PWD/kernel_modules/connectivity/common" mtk_wmt.log
+          mk wmt_chrdev_wifi "$PWD/kernel_modules/connectivity/wlan/adaptor" mtk_chr.log
+          mk wlan_drv_gen4m "$PWD/kernel_modules/connectivity/wlan/core/gen4m" mtk_wlan.log
+
+          echo "== collected modules =="
+          find kernel_modules out -name '*.ko' 2>/dev/null | sort | tee mtk_modules.txt
+          while read -r f; do
+            case "$f" in
+              *wmt_drv.ko|*wmt_chrdev_wifi.ko|*wlan_drv_gen4m.ko) modinfo "$f" | grep -E '^(filename|vermagic|depends|name):' ;;
+            esac
+          done < mtk_modules.txt
+
+      - name: Upload MediaTek WiFi modules
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtkwifi-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            kernel_modules/**/*.ko
+            out/**/*.ko
+            mtk_*.log
+            mtk_modules.txt
+
       - name: Report WiFi module
         if: always()
         run: |
