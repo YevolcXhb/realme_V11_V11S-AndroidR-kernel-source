@@ -120,8 +120,10 @@ jobs:
             echo "---- $1 tail ----"
             grep -E "MODPOST|LD \[M\]|CC \[M\]|error" "$3" | tail -8 || true
           }
-          mk conninfra "$PWD/kernel_modules/connectivity/conninfra" mtk_conninfra.log
-          mk wmt_drv "$PWD/kernel_modules/connectivity/common" mtk_wmt.log
+          # On CONNAC2X2 SOC3_0 the adaptor talks to the conninfra that is already built
+          # into this kernel (mtk_wcn_conninfra_* in System.map); there is no wmt_drv
+          # module in this configuration and no conninfra.ko to load - the vendor
+          # conninfra tree has no platform/mt6833 to build against anyway.
           mk wmt_chrdev_wifi "$PWD/kernel_modules/connectivity/wlan/adaptor" mtk_chr.log
           mk wlan_drv_gen4m "$PWD/kernel_modules/connectivity/wlan/core/gen4m" mtk_wlan.log
           echo "== .ko files =="
