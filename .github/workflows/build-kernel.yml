@@ -157,14 +157,19 @@ jobs:
           ln -s "$VENDOR/common"        "$CONN/wmt_drv"
           ln -s "$VENDOR/wlan/adaptor"  "$CONN/wmt_chrdev_wifi"
           ln -s "$VENDOR/wlan/core/gen4m" "$CONN/wlan_drv_gen4m"
-          # Each stub forwards the one object its vendor build produces. The
-          # Kbuild files are separate because they are read through -include:
-          # Makefile.build resolves obj-y names against $(obj), that is, the
-          # directory being built, and a ".." path never matches.
+          # The references belong to the directory being built: this Makefile is
+          # parsed in "parse-obj" mode (drivers/Makefile recurses with
+          # need-builtin=0), where kbuild reads obj-y but leaves it to the
+          # separate "build-by-dir" pass to emit the rules -- and that pass runs
+          # in ordinary mode from inside the directory. So the stub Makefiles
+          # have to define obj-y themselves; a hand-written built-in.o rule does
+          # not survive into that pass. The link beside each stub is what
+          # supplies the sources, so the stub itself only names the object.
           stub() {
             dir="$1"; obj="$2"
-            echo "obj-y += $obj" > "$CONN/$dir/Kbuild"
-            echo "include \$(srctree)/\$(src)/Kbuild" > "$CONN/$dir/Makefile"
+            cat > "$CONN/$dir/Makefile" <<EOF
+obj-y += $obj
+EOF
           }
           stub wmt_drv          wmt_drv.o
           stub wmt_chrdev_wifi  wmt_chrdev_wifi.o
