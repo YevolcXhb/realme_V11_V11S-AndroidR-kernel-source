@@ -97,15 +97,13 @@ endif
         # vendor directory. AOSP builds solve the same problem by making those
         # directories read-only, because the vendor Makefiles insist on
         # re-creating these links themselves.
-        # The targets must live in the *source* tree, because that is where
-        # kbuild looks for the directories it recurses into. $(CURDIR) points at
-        # the object tree during O= builds, so VIA (the out/ prefix found by
-        # walking this file's own path up through srctree) comes off first;
-        # LOCAL_SRC is then relative to the kernel root and survives the fact
-        # that $(srctree) means a different thing when this file is reached
-        # from a subdirectory during a second, recursive parse.
-        VIA       := $(filter-out $(srctree)%,$(patsubst $(srctree)%,%,$(CURDIR)))
-        LOCAL_SRC := $(patsubst $(VIA)%/%,%,$(patsubst $(srctree)/%,%,$(src)))
+        # The stubs must live in the source tree -- an O= build runs kbuild
+        # from the object tree, and $(OUT) (the leading component of $(src) for
+        # an out-of-tree build, empty for an in-tree one) comes off first.
+        # What is left is relative to the kernel root and stays correct when
+        # this Makefile is parsed again from a subdirectory.
+        OUT       := $(firstword $(subst /, ,$(patsubst $(srctree)/%,%,$(src))))
+        LOCAL_SRC := $(patsubst $(OUT)/%,%,$(patsubst $(srctree)/%,%,$(src)))
         SRC_ABS   := $(srctree)/$(LOCAL_SRC)
 
         WMT_DRV_PATH     := $(SRC_ABS)/wmt_drv
@@ -123,7 +121,7 @@ endif
         $(shell echo 'obj-y += wmt_drv.o' > $(WMT_DRV_PATH)/Makefile)
         $(shell echo 'obj-y += wmt_chrdev_wifi.o' > $(WMT_CHR_DRV_PATH)/Makefile)
         $(shell echo 'obj-y += wlan_drv_gen4m.o' > $(WLAN_DRV_PATH)/Makefile)
-        $(info WLAN_DRV_BUILD_IN: paths wmt=$(WMT_DRV_PATH))
+        $(info WLAN_DRV_BUILD_IN: wmt=$(WMT_DRV_PATH) exists=$(wildcard $(WMT_DRV_PATH)))
 
         subdir-y += wmt_drv wmt_chrdev_wifi wlan_drv_gen4m
 
