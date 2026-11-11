@@ -167,9 +167,7 @@ jobs:
           # supplies the sources, so the stub itself only names the object.
           stub() {
             dir="$1"; obj="$2"
-            cat > "$CONN/$dir/Makefile" <<EOF
-obj-y += $obj
-EOF
+            echo "obj-y += $obj" > "$CONN/$dir/Makefile"
           }
           stub wmt_drv          wmt_drv.o
           stub wmt_chrdev_wifi  wmt_chrdev_wifi.o
