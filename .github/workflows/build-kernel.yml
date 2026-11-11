@@ -98,6 +98,31 @@ jobs:
         # update is attempted a few times before the install runs.
         run: |
           set -uo pipefail
+          # The runner's baked-in mirror file points at azure.archive.ubuntu.com.
+          # When that name stops resolving, every apt call fails no matter how
+          # often it is retried, so drop the mirror file and point the sources
+          # at archive.ubuntu.com up front. Being in Azure, that host usually
+          # answers; if this particular outage affects it too, the retries below
+          # still apply.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo "::warning::dropping the runner mirror file before installing"
+            sudo cp /etc/apt/apt-mirrors.txt /tmp/apt-mirrors.txt.bak || true
+            sudo rm -f /etc/apt/apt-mirrors.txt
+          fi
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              *.bak|*.save) continue ;;
+            esac
+            if grep -qE 'azure\.archive\.ubuntu\.com|mirror\+file' "$f"; then
+              sudo sed -i -E \
+                -e 's#mirror\+file:[^ ]*#http://archive.ubuntu.com/ubuntu#g' \
+                -e 's#http://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
+                -e 's#https://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
+                "$f"
+              echo "rewrote $f"
+            fi
+          done
           sudo apt-get update
           for i in 1 2 3; do
             if sudo apt-get install -y --no-install-recommends \
