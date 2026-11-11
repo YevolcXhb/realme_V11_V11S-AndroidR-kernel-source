@@ -775,10 +775,3 @@ $(MODULE_NAME)-objs  += $(SMART_BW_DECISION_OBJS)
 ifneq ($(findstring UT_TEST_MODE,$(MTK_COMBO_CHIP)),)
 include $(src)/test/ut.make
 endif
-# --- extra include path -----------------------------------------------------
-# os/linux/plat/mt6833/plat_priv.c includes "wmt_exp.h", which lives in
-# common/common_main/include. With CONFIG_MTK_WIFI_CONNINFRA_SUPPORT=y the
-# block above only adds conninfra paths, so add the common ones explicitly.
-# MTK_WIFI_AS_MODULE_INCLUDES
-ccflags-y += -I$(srctree)/../vendor/mediatek/kernel_modules/connectivity/common/common_main/include
-ccflags-y += -I$(srctree)/../vendor/mediatek/kernel_modules/connectivity/common/common_main/linux/include
