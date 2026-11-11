@@ -101,8 +101,7 @@ endif
         WMT_CHR_DRV_PATH := $(srctree)/$(src)/wmt_chrdev_wifi
         WLAN_DRV_PATH    := $(srctree)/$(src)/wlan_drv_gen4m
 
-        $(shell rm -f $(WMT_DRV_PATH) $(WMT_CHR_DRV_PATH) $(WLAN_DRV_PATH) \
-                  $(WMT_DRV_PATH)/Makefile $(WMT_CHR_DRV_PATH)/Makefile $(WLAN_DRV_PATH)/Makefile)
+        $(shell rm -f $(WMT_DRV_PATH) $(WMT_CHR_DRV_PATH) $(WLAN_DRV_PATH))
         $(shell ln -s $(ABS_PATH_TO_WMT_DRV)      $(WMT_DRV_PATH))
         $(shell ln -s $(ABS_PATH_TO_WLAN_CHR_DRV) $(WMT_CHR_DRV_PATH))
         $(shell ln -s $(ABS_PATH_TO_WLAN_DRV)     $(WLAN_DRV_PATH))
@@ -140,8 +139,6 @@ endif
         # Do build-in for xxx.c checking
         subdir-ccflags-y += -D MTK_WCN_REMOVE_KERNEL_MODULE
         subdir-ccflags-y += -D MTK_WCN_BUILT_IN_DRIVER
-        export WLAN_OBJ_NAME
-        subdir-ccflags-y += -include $(srctree)/$(src)/wrapper.mk
         # For BT built-in mode start @{
         # ifneq (,$(filter $(CONFIG_MTK_COMBO_CHIP), "CONSYS_6885"))
         #     PATH_TO_BT_DRV       = vendor/mediatek/kernel_modules/connectivity/bt/mt66xx/connac2
