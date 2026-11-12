@@ -1,117 +1,127 @@
-# MediaTek CONSYS 6833 Wi-Fi bring-up notes
+# MediaTek Wi-Fi bring-up on the realme V11 (RMX3122 / MT6833)
 
-Field notes from getting the built-in Wi-Fi of the realme V11 (RMX3122, MT6833,
-CONSYS_6833) working on a native Ubuntu 24.04 kernel. Written down because
-almost none of it is documented anywhere.
+Status: **working**. Built-in Wi-Fi powers on at boot, associates with the
+configured hotspot and gets a DHCP lease with no manual steps. Verified on the
+device across repeated cold boots.
 
-## Where the stack lives
+This file records what actually blocked the bring-up and the evidence for each
+fix, so the next person does not repeat the dead ends.
 
-The kernel tree only builds `connadp` (a thin adapter). The real driver stack is
-the vendor tree under `kernel_modules/connectivity` and it is built as three
-modules against this kernel:
+## The stack
 
-| module | source | role |
-|---|---|---|
-| `wmt_drv.ko` | `common/` | WMT core, STP transport, CONSYS power/clock |
-| `wmt_chrdev_wifi.ko` | `wlan/adaptor/` | `/dev/wmtWifi` power switch + fw log |
-| `wlan_6833_axi.ko` | `wlan/core/gen4m/` | the actual Wi-Fi driver (AXI HIF) |
+Three vendor modules, all rebuilt from the vendor kernel tree:
 
-The OEM's own module set is exactly these three; there is no `conninfra.ko` on
-this SoC, and the OEM kernel config (`CONFIG_MTK_COMBO_CHIP="CONSYS_6833"`,
-`CONFIG_MTK_COMBO_WIFI=y`, `CONFIG_MTK_BTIF=y`) matches what we build.
-
-## Build gotchas
-
-1. **obj-m vs obj-y.** The vendor Makefiles emit `obj-y` whenever
-   `CONFIG_MTK_COMBO_WIFI=y`, so an out-of-tree `make M=...` produces nothing
-   ("MODPOST 0 modules") and no error. `MTK_WIFI_AS_MODULE` (see the Makefiles)
-   pins the branch to `obj-m` for a module-only build.
-
-2. **Empty guard variables.** `common/` and `adaptor/` wrap their whole body in
-   `ifneq ($(CONFIG_MTK_COMBO),)`, and `gen4m` picks `obj-$(CONFIG_MTK_WIFI_ONLY)`
-   when that variable is empty (`obj-` is not a variable kbuild reads). Both are
-   silent failures.
-
-3. **Platform code selection.** `common/Makefile` compiles
-   `platform/$(MTK_PLATFORM).o`. The kernel Makefile exports `MTK_PLATFORM` from
-   `CONFIG_MTK_PLATFORM`, which is **mt6853** in this tree, so the build silently
-   pulls in `platform/mt6853.c` instead of `platform/mt6833.c` and the SoC
-   regulator/clock hooks are wrong. Pass `MTK_PLATFORM=mt6833` on the make
-   command line (an environment variable is not enough).
-
-4. **`-Werror` in the vendor Makefiles** does not survive modern gcc. The
-   Makefiles here downgrade it to `-Wno-error`.
-
-5. **A real source bug:** `common_main/platform/mtk_wcn_consys_hw.c` puts the
-   closing brace of a `for` loop inside `#ifdef OPLUS_MT6833_POWERINFO_STANDBY`,
-   so the file only compiles when that symbol is defined
-   (`KCFLAGS=-DOPLUS_MT6833_POWERINFO_STANDBY`).
-
-## Userspace has to drive the init
-
-`wmt_drv` only registers `wmt_detect` at module load. Everything else is
-triggered by userspace, which is what Android's `wmt_loader` does:
-
-1. `SET_CHIP_ID` on `/dev/wmtdetect` with the SoC id (`0x6833`). Passing 0 maps to
-   `WMT_CHIP_TYPE_COMBO` and crashes the kernel on this board.
-2. `DO_MODULE_INIT` - runs `mtk_wcn_common_drv_init()`, which creates the
-   `wmtd`/`wmtd_worker` threads and the `wmt_lib` queues.
-3. `SET_STP_MODE` on `/dev/stpwmt` with `0x23` = `STP_BTIF_FULL | WMT_FM_COMM<<4`.
-   Without it power-on bails out with "no hif info".
-4. **ROM patch metadata** - see below.
-
-`SET_ROM_PATCH_INFO` (ioctl 31, `struct wmt_rom_patch_info`) matters because
-`wmt_ctrl_get_rom_patch_info()` asks the MCU for the patch list when the table is
-empty, and the MCU is not answering yet at that point:
-
-```c
-if (!pDev->pWmtRomPatchInfo[WMTDRV_TYPE_WMT]) {
-        snprintf(cmdStr, "srh_rom_patch");
-        ret = wmt_ctrl_ul_cmd(pDev, cmdStr);   /* -2, no MCU yet */
-        if (ret) return -1;                    /* power-on unwinds here */
-}
-```
-
-Supplying the entry up front skips the query and lets the driver copy the patch
-into EMI over AXI, which is how `mtk_wcn_soc_rom_patch_dwn()` works.
-
-### Choosing the patch file
-
-The patch header's version must match the silicon. This board reports
-`consys HW version id(0x8a00)`, and:
-
-| file | header version |
+| module | source dir |
 |---|---|
-| `soc3_0_ram_mcu_1_1_hdr.bin` | 0x8a10 |
-| `soc2_2_ram_mcu_1_1_hdr.bin` | **0x8a00** |
+| `wmt_drv.ko` | `kernel_modules/connectivity/common` |
+| `wmt_chrdev_wifi.ko` | `kernel_modules/connectivity/wlan/adaptor` |
+| `wlan_6833_axi.ko` | `kernel_modules/connectivity/wlan/core/gen4m` |
 
-So the `soc2_2` family is the right one for this device.
+There is no conninfra on this SoC, so the chip is brought up the old way: the
+driver asks userspace to do the loader's job over STP.
 
-## Current status
+## Blocker 1: chip family selected at build time
+
+`MTK_COMBO_CHIP` decides which chip family gen4m is compiled for. It is not
+derived from the kernel config, so the cross build has to set it explicitly, and
+each value is wrong in a different way:
+
+| value | RX descriptor | firmware it requests | result |
+|---|---|---|---|
+| `CONNAC` | 16 bytes | `WIFI_RAM_CODE_soc1_0` | RX events dropped, ECO read times out |
+| `SOC2_2X2` | 20 bytes | `WIFI_RAM_CODE_soc2_0` | ECO passes, firmware not found |
+| `SOC2_1X1` | 20 bytes | `WIFI_RAM_CODE_soc2_2` | works |
+
+`SOC2_1X1` is correct because it is the only family that names the firmware the
+vendor actually ships (`WIFI_RAM_CODE_soc2_2_1_1.bin`) and its 20-byte RX
+descriptor matches what the firmware really sends.
+
+Symptom with the wrong family - the driver silently drops the reply to the
+register read used for ECO detection, then fails:
 
 ```
-[WMT-IC] [Rom Patch]Name=soc2_2_ram_mcu_1_1_hdr.bin,EmiOffset=0x0,Size=0x... 
-[WMT-IC] physAddr=0xbe000000 ...      <- patch written into EMI
+kalDevPortRead: Skip Rx packet, SDL0[36] > SwRfb max len[32]
+wlanSetChipEcoInfo failed!
+wlanAdapterStart: Fail reason: 4
 ```
 
-The remaining gap is the MCU/BTIF handshake: `mtk btif irq` never fires, so the
-MCU never acknowledges. Everything below that (power rails, clocks, A-DIE
-detect, EMI windows) is verified working.
+20 (descriptor) + 8 (init event) + 8 (access-reg payload) = 36. With a 16-byte
+descriptor the driver expects 32 and rejects the packet.
 
-## Files in this directory
+## Blocker 2: ROM patch table and EMI offsets
 
-| file | purpose |
-|---|---|
-| `wmt_init.c` | chip id + common driver init via `/dev/wmtdetect` |
-| `wmt_setstp.c` | STP transport selection via `/dev/stpwmt` |
-| `wmt_setpatch.c` | ROM patch metadata injection |
-| `mtkwifi-init.sh` | runs the three steps above at boot |
-| `mtkwifi-init.service` | systemd unit for the above |
-| `usb-role-watch.sh` + `.service` | Type-C dock detection, switch to OTG host |
-| `wifi-connect.sh` + `wifi-connect@.service` + `99-wifi-connect.rules` | bring any `wlan0` up and connect |
+`mtk_wcn_soc_rom_patch_dwn()` asks userspace for the patch list over STP. On
+Android that request is answered by `/vendor/bin/wmt_launcher`, so on a plain
+Ubuntu userland nothing answers and power-on unwinds with:
 
-## Fallback
+```
+mtk_wcn_soc_rom_patch_dwn: failed to get patch (type: 0, ret: -1)
+```
 
-`r8188eu` is built by the same workflow. With an RTL8188EU dongle plugged in the
-udev rule starts `wifi-connect@wlan0.service` and the device associates using
-`/etc/wpa_supplicant/wpa_supplicant-wlan0.conf`.
+`tools/device/wmt_setpatch.c` answers it by pre-populating the same table with
+`WMT_IOCTL_SET_ROM_PATCH_INFO`. The EMI offset is encoded in the patch file's
+own header (bytes 24..31), and the kernel derives
+
+```
+offset = address[0] | address[1] << 8 | address[2] << 16
+```
+
+with the loader zeroing `address[0]`. Reading the soc2_2 headers directly gives:
+
+| patch | type | header bytes 24..31 | EMI offset |
+|---|---:|---|---:|
+| `soc2_2_ram_mcu_1_1_hdr.bin` | 4 | `11 00 00 f0 00 00 00 04` | `0x000000` |
+| `soc2_2_ram_wifi_1_1_hdr.bin` | 3 | `11 00 2a f0 00 00 00 03` | `0x2a0000` |
+| `soc2_2_ram_bt_1_1_hdr.bin` | 0 | `11 00 17 f0 00 00 00 00` | `0x170000` |
+
+Guessing these offsets (they are not round numbers) makes the MCU firmware
+execute garbage and dump an exception over STP instead of booting.
+
+Only the `soc2_2` family matches this silicon: the driver reports
+`CONSYS SOC_CONSYS.E1 (0x8a00/0x8a00)`, and the `soc3_0` patches carry
+`0x8a10`.
+
+## Blocker 3: firmware and config files
+
+`request_firmware()` needs the vendor files in `/lib/firmware`:
+`WIFI_RAM_CODE_soc2_2_1_1.bin`, `WMT_SOC.cfg`, `BT_FW.cfg`,
+`fm_cust.cfg`, `wifi_*.cfg` and `txpowerctrl_*.cfg` (from the vendor
+image's `/firmware`). The ROM patch binaries must be reachable too; they live
+in `/vendor/firmware` on the installed system.
+
+## Boot sequence
+
+`tools/device/mtkwifi-init.sh` (oneshot, before `network-pre.target`):
+
+1. load the three modules
+2. create `/dev/wmtdetect`, `/dev/wmtWifi`, `/dev/stpwmt` if devtmpfs did not
+3. `wmt-init 0x6833`: `SET_CHIP_ID` + `DO_MODULE_INIT`
+4. `wmt-setstp 0x23`: `SET_STP_MODE` for BTIF transport
+5. `wmt-setpatch2 4|3|0 <file> <offset>` for the three patches above
+6. write `1` to `/dev/wmtWifi`
+
+Then `wifi-connect@wlan0.service` (started by a udev rule when `wlan0`
+appears) runs `wpa_supplicant` and DHCP.
+
+## Verified result
+
+```
+mtkwifi-init.sh: SET_ROM_PATCH_INFO(type=4, name=soc2_2_ram_mcu_1_1_hdr.bin, offset=0x0) -> 0 ok
+mtkwifi-init.sh: SET_ROM_PATCH_INFO(type=3, name=soc2_2_ram_wifi_1_1_hdr.bin, offset=0x2a0000) -> 0 ok
+mtkwifi-init.sh: SET_ROM_PATCH_INFO(type=0, name=soc2_2_ram_bt_1_1_hdr.bin, offset=0x170000) -> 0 ok
+mtkwifi-init.sh: mtkwifi: wlan0 is up
+
+wlan0  UP  192.168.137.122/24
+default via 192.168.137.1 dev wlan0
+ssid=Slider  wpa_state=COMPLETED
+http 204
+```
+
+## Notes
+
+* `wlan1` also appears (the driver creates it for multi-STA/p2p).
+* The chip is referred to as 6632/6631 in places; the A-DIE reports chip id
+  0x6833 and ECO E1.
+* A failed power-on can leave the chip in a state where module unload hangs;
+  `reboot -f` is the reliable way out.
+* Type-C dock auto-switching is **not** part of this and is currently disabled.
