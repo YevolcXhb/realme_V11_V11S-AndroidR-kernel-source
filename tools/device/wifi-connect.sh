@@ -8,7 +8,7 @@ set -u
 
 IFACE=${1:-wlan0}
 CONF="/etc/wpa_supplicant/wpa_supplicant-$IFACE.conf"
-WAIT=30
+WAIT=10
 
 log() { echo "wifi-connect[$IFACE]: $*"; }
 
@@ -49,7 +49,7 @@ wpa_supplicant -B -i "$IFACE" -c "$CONF" -Dnl80211,wext || log "wpa_supplicant f
 
 # wait for association (up to 45s)
 i=0
-while [ "$i" -lt 45 ]; do
+while [ "$i" -lt 20 ]; do
     if wpa_cli -i "$IFACE" status 2>/dev/null | grep -q "wpa_state=COMPLETED"; then
         log "associated"
         break
@@ -60,7 +60,7 @@ done
 
 if command -v dhclient >/dev/null 2>&1; then
     log "requesting DHCP lease"
-    dhclient -1 -v "$IFACE" 2>&1 | tail -3 || log "dhclient failed"
+    timeout 15 dhclient -1 -v "$IFACE" 2>&1 | tail -3 || log "dhclient failed"
     ip -4 addr show "$IFACE" | grep -q "inet " && ip -4 addr show "$IFACE" | grep "inet "
 fi
 

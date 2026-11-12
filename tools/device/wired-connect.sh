@@ -8,7 +8,7 @@ set -u
 
 IFACE=${1:-eth0}
 STATIC_ADDR=${WIRED_STATIC_ADDR:-192.168.123.50/24}
-WAIT=20
+WAIT=10
 
 log() { echo "wired-connect[$IFACE]: $*"; }
 
@@ -23,13 +23,13 @@ ip link set "$IFACE" up || true
 
 # wait for carrier (dock has to power up and train the PHY)
 i=0
-while [ "$i" -lt 15 ]; do
+while [ "$i" -lt 8 ]; do
     [ "$(cat /sys/class/net/$IFACE/carrier 2>/dev/null)" = "1" ] && break
     i=$((i+1)); sleep 1
 done
 log "carrier=$(cat /sys/class/net/$IFACE/carrier 2>/dev/null)"
 
-if dhclient -1 -timeout 8 "$IFACE" >/dev/null 2>&1; then
+if timeout 6 dhclient -1 "$IFACE" >/dev/null 2>&1; then
     log "dhcp lease: $(ip -4 addr show "$IFACE" | awk '/inet /{print $2}')"
     exit 0
 fi

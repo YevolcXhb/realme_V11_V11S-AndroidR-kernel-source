@@ -125,3 +125,30 @@ http 204
 * A failed power-on can leave the chip in a state where module unload hangs;
   `reboot -f` is the reliable way out.
 * Type-C dock auto-switching is **not** part of this and is currently disabled.
+
+## Boot timing
+
+Measured on the test device (`journalctl -o short-precise`):
+
+| event | time |
+|---|---|
+| kernel | 2 min 2 s |
+| `mtkwifi-init` starts | +0 s |
+| `wlan0` appears | +2 s |
+| wpa_supplicant associated | +5 s |
+| DHCPACK on wlan0 | +5 s |
+| `eth0` static address applied | +8 s |
+
+Two things were fixed here:
+
+* `wifi-connect@.service` used to carry `After=network.target`. That unit is
+  itself what brings the link up, so ordering it after `network.target` delayed
+  the whole Wi-Fi connection by ~85 s. It now only orders after
+  `network-pre.target` and starts from the udev trigger.
+* The wait loops and the DHCP attempts are bounded: `WAIT=10` for the interface,
+  `-lt 20` for association, and `timeout 15 dhclient -1` /
+  `timeout 6 dhclient -1`. Note ISC dhclient has **no** `-timeout` flag - using
+  it makes dhclient print its usage and exit, which silently leaves the link
+  without an address.
+
+The remaining boot cost is the kernel (2 min), not these scripts.

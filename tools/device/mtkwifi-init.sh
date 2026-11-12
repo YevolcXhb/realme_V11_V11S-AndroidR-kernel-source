@@ -60,7 +60,7 @@ echo "mtkwifi: powering on"
 printf '1' > "$WMTWIFI_DEV" 2>/dev/null || echo "mtkwifi: power on write failed"
 
 i=0
-while [ "$i" -lt 20 ]; do
+while [ "$i" -lt 10 ]; do
     [ -e /sys/class/net/wlan0 ] && break
     i=$((i+1)); sleep 1
 done
