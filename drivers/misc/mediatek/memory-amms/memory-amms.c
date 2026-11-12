@@ -825,6 +825,8 @@ static int __init amms_init(void)
 	 */
 	amms_task = NULL;
 	(void)param;
+	/* keep the worker referenced so -Wunused-function stays quiet */
+	(void)amms_task_process;
 	pr_info("amms: background thread disabled for server use\n");
 	/*kthread_bind(amms_task, 0);*/
 #if 1
