@@ -1,0 +1,2 @@
+# Bring up the dock's Ethernet as soon as it appears (and again after replug).
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="eth0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="wired-connect@eth0.service"

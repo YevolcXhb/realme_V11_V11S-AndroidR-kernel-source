@@ -71,3 +71,25 @@ plugging a PC cable still gives the normal UFP/RNDIS path.
 * Battery is not charged while sourcing the dock, which is expected.
 * `mt-tcpc,vconn_supply` is still `0`; if a dock with an e-marked cable fails
   to power up, try setting it to `1` as well.
+
+## Wired networking through the dock
+
+The dock's `1a86:5394` Ethernet adapter comes up as `eth0` as soon as the port
+is in host mode. When the dock is cabled straight into a PC NIC there is no DHCP
+server anywhere on that link, so `eth0` otherwise sits at a link-local address
+and neither side can reach the other.
+
+`tools/device/wired-connect.sh` (started by a udev rule whenever `eth0`
+appears) tries DHCP with a short timeout and falls back to a static address:
+
+```
+eth0  UP  192.168.123.50/24      (WIRED_STATIC_ADDR overrides)
+```
+
+The PC side just needs to be on the same subnet. Verified after an unattended
+reboot: `eth0` came up at `192.168.123.50/24` with no manual step, the dock's
+hub and LAN adapter enumerated, and `data_role` was `host` again.
+
+Windows reports that adapter as an unidentified/no-internet network, which is
+expected on a router-less point-to-point link and does not stop SSH or file
+transfer.

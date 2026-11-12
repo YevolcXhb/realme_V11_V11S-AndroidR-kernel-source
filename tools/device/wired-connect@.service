@@ -1,0 +1,13 @@
+[Unit]
+Description=Wired link on USB-C dock (%I)
+After=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/wired-connect.sh %I
+TimeoutSec=90
+
+[Install]
+WantedBy=multi-user.target
