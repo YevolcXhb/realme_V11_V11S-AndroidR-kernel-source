@@ -1,0 +1,12 @@
+[Unit]
+Description=Lower vendor IRQ thread priority for headless server use
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/irq-prio-tune.sh
+TimeoutSec=60
+
+[Install]
+WantedBy=multi-user.target
