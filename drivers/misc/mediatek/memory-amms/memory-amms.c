@@ -815,12 +815,17 @@ static int __init amms_init(void)
 	int ret = 0;
 	struct sched_param param = {.sched_priority = 98 };
 
-	amms_task = kthread_create(amms_task_process,
-			NULL, "amms_task");
-	if (!amms_task)
-		pr_info("amms_task thread create failed\n");
-
-	sched_setscheduler(amms_task, SCHED_FIFO, &param);
+	/*
+	 * The task used to be created here and pinned to SCHED_FIFO 98 - above
+	 * every threaded IRQ on this kernel - while it parks in D state on an
+	 * idle box. There is no modem and no Android memory pressure to manage
+	 * on a headless server, so it only preempted real work and held the
+	 * load average at 1+. Leave it out; the platform driver below still
+	 * registers, and every other user of amms_task already NULL-checks it.
+	 */
+	amms_task = NULL;
+	(void)param;
+	pr_info("amms: background thread disabled for server use\n");
 	/*kthread_bind(amms_task, 0);*/
 #if 1
 	pm_qos_add_request(&amms_vcore_req,
