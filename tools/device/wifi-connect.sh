@@ -27,6 +27,17 @@ if command -v iw >/dev/null 2>&1; then
     iw reg set CN 2>/dev/null || true
 fi
 
+# The MTK driver finds no NVRAM (Android keeps it under /data/nvram, which this
+# userland does not have), so it derives a fresh random MAC on every boot. The AP
+# then hands out a different DHCP lease each time and SSH stops being reachable at
+# the address you wrote down. Pin the address before the interface comes up.
+FIXED_MAC=${WIFI_FIXED_MAC:-00:08:22:6c:65:fd}
+if [ -n "$FIXED_MAC" ]; then
+    ip link set dev "$IFACE" down 2>/dev/null || true
+    ip link set dev "$IFACE" address "$FIXED_MAC" 2>/dev/null \
+        && log "pinned MAC $FIXED_MAC" || log "could not pin MAC"
+fi
+
 ip link set "$IFACE" up || true
 
 # stop any stale supplicant instance
