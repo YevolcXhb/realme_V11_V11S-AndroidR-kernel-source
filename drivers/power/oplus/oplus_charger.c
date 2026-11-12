@@ -687,10 +687,23 @@ int oplus_battery_get_property(struct power_supply *psy,
 		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
-		if(chip->ui_soc > 100)
+		/*
+		 * This unit runs without a battery: a DC module holds the pack
+		 * terminals at 4.2-4.4 V. The gauge counts coulombs through a
+		 * pack that never discharges, so what it reports is meaningless -
+		 * on the test device it wandered between 1% and 50% while the
+		 * terminal voltage sat still at 4.25 V. Derive the level from the
+		 * terminal voltage instead, which is what the hardware actually
+		 * tells us.
+		 *
+		 * chip->batt_volt is in mV (see POWER_SUPPLY_PROP_VOLTAGE_NOW).
+		 */
+		if (chip->batt_volt >= 4200)
 			val->intval = 100;
+		else if (chip->batt_volt <= 3400)
+			val->intval = 0;
 		else
-			val->intval = chip->ui_soc;
+			val->intval = (chip->batt_volt - 3400) * 100 / 800;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
 		val->intval = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
