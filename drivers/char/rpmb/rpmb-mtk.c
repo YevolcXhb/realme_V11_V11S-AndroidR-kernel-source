@@ -3213,9 +3213,17 @@ static int __init rpmb_init(void)
 	}
 
 #ifdef CONFIG_TRUSTONIC_TEE_SUPPORT
-	open_th = kthread_run(rpmb_thread, NULL, "rpmb_open");
-	if (IS_ERR(open_th))
-		MSG(ERR, "%s, init kthread_run failed!\n", __func__);
+	/*
+	 * This thread only exists so that Android can open an RPMB
+	 * session through the TEE. With no TeeClient in userspace,
+	 * session_mc_open_session() never returns and the task sits in
+	 * D state forever, costing a full unit of load average for no
+	 * work. /dev/rpmb is still created above and rpmb_open()
+	 * retries the session lazily, so nothing is lost by skipping
+	 * the eager open at boot.
+	 */
+	open_th = NULL;
+	MSG(INFO, "%s, rpmb_open thread skipped (no TEE)\n", __func__);
 #endif
 
 #if (defined(CONFIG_MICROTRUST_TEE_SUPPORT))
