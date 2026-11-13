@@ -1491,6 +1491,50 @@ out:
  * space. The distinction is based on the IPA causing the fault and whether this
  * memory region has been registered as standard RAM by user space.
  */
+/*
+ * Store to ROM/flash: the write itself is a no-op, but the pre/post-index
+ * forms still update the base register. Decode just those pair stores so
+ * the instruction can be skipped without corrupting guest state.
+ *
+ * Guests reach this path because ESR.ISV is zero for pair stores, which
+ * makes io_mem_abort() bail out with -ENOSYS and kills the vCPU. AAVMF
+ * hits it while filling the region below its own load address.
+ */
+static bool kvm_skip_rom_store(struct kvm_vcpu *vcpu)
+{
+	u32 insn;
+	unsigned long pc = *vcpu_pc(vcpu);
+	long long imm;
+	int rn, size;
+
+	if (kvm_vcpu_read_guest(vcpu, pc, &insn, sizeof(insn)))
+		return false;
+
+	switch (insn & 0xffc00000) {
+	case 0xa8800000:	/* stp x, x, [xn], #imm */
+	case 0xa9800000:	/* stp x, x, [xn, #imm]! */
+		size = 8;
+		break;
+	case 0x28800000:	/* stp w, w, [xn], #imm */
+	case 0x29800000:	/* stp w, w, [xn, #imm]! */
+		size = 4;
+		break;
+	default:
+		return false;
+	}
+
+	imm = (insn >> 15) & 0x7f;
+	if (imm & 0x40)
+		imm -= 0x80;
+	imm *= size;
+
+	rn = (insn >> 5) & 0x1f;
+	vcpu_set_reg(vcpu, rn, vcpu_get_reg(vcpu, rn) + imm);
+
+	kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
+	return true;
+}
+
 int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 {
 	unsigned long fault_status;
@@ -1564,16 +1608,14 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 			goto out_unlock;
 		}
 		/*
-		 * A write into a read-only memory slot targets ROM/flash.
-		 * Hardware silently ignores such a store, and userspace
-		 * emulates it the same way through the MMIO exit. But
-		 * instructions such as stp/ldp have no valid syndrome
-		 * (ESR.ISV == 0), so io_mem_abort() cannot decode them and
-		 * fails the vCPU. Skip the store instead: it has no effect
-		 * on either side.
+		 * Writes into a read-only memory slot come from ROM/flash,
+		 * where a store has no effect. Userspace normally skips
+		 * them through the MMIO exit, but pair stores carry no
+		 * syndrome (ESR.ISV == 0) and cannot be decoded there, so
+		 * emulate the addressing writeback and skip the store.
 		 */
-		if (!kvm_is_error_hva(hva) && write_fault) {
-			kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
+		if (!kvm_is_error_hva(hva) && write_fault &&
+		    kvm_skip_rom_store(vcpu)) {
 			ret = 1;
 			goto out_unlock;
 		}
