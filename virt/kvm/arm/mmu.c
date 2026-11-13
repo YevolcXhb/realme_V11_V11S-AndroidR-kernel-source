@@ -1510,32 +1510,69 @@ static bool kvm_skip_rom_store(struct kvm_vcpu *vcpu)
 	if (kvm_vcpu_read_guest(vcpu, pc, &insn, sizeof(insn)))
 		return false;
 
+	/* pair stores */
 	switch (insn & 0xffc00000) {
 	case 0xa8800000:	/* stp x, x, [xn], #imm */
-		size = 8; writeback = 1; break;
 	case 0xa9800000:	/* stp x, x, [xn, #imm]! */
-		size = 8; writeback = 1; break;
+		size = 8; writeback = 1; goto pair;
 	case 0xa9000000:	/* stp x, x, [xn, #imm] */
-		size = 8; writeback = 0; break;
+		size = 8; writeback = 0; goto pair;
 	case 0x28800000:	/* stp w, w, [xn], #imm */
-		size = 4; writeback = 1; break;
 	case 0x29800000:	/* stp w, w, [xn, #imm]! */
-		size = 4; writeback = 1; break;
+		size = 4; writeback = 1; goto pair;
 	case 0x29000000:	/* stp w, w, [xn, #imm] */
-		size = 4; writeback = 0; break;
+		size = 4; writeback = 0; goto pair;
 	default:
-		return false;
+		goto single;
 	}
 
+pair:
 	imm = (insn >> 15) & 0x7f;
 	if (imm & 0x40)
 		imm -= 0x80;
 	imm *= size;
-
 	rn = (insn >> 5) & 0x1f;
 	if (writeback)
 		vcpu_set_reg(vcpu, rn, vcpu_get_reg(vcpu, rn) + imm);
+	goto skip;
 
+single:
+	/* single-register stores, immediate addressing */
+	switch (insn & 0xff800c00) {
+	case 0xf8000400:	/* str x, [xn], #imm  /  str x, [xn, #imm]! */
+	case 0xf8000c00:
+		size = 8; break;
+	case 0xb8000400:	/* str w variants */
+	case 0xb8000c00:
+		size = 4; break;
+	case 0x78000400:	/* strh variants */
+	case 0x78000c00:
+		size = 2; break;
+	case 0x38000400:	/* strb variants */
+	case 0x38000c00:
+		size = 1; break;
+	default:
+		switch (insn & 0xffc00000) {
+		case 0xf9000000:	/* str x, [xn, #imm] */
+		case 0xb9000000:	/* str w */
+		case 0x79000000:	/* strh */
+		case 0x39000000:	/* strb */
+			size = 0; break;	/* no writeback, just skip */
+		default:
+			kvm_err("noskip pc=%#lx insn=%#x\n", pc, insn);
+			return false;
+		}
+	}
+	if (size) {
+		imm = (insn >> 12) & 0x1ff;
+		if (imm & 0x100)
+			imm -= 0x200;
+		imm *= size;
+		rn = (insn >> 5) & 0x1f;
+		vcpu_set_reg(vcpu, rn, vcpu_get_reg(vcpu, rn) + imm);
+	}
+
+skip:
 	kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
 	return true;
 }
