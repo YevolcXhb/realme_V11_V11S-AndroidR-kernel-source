@@ -1,0 +1,15 @@
+[Unit]
+Description=USB Wi-Fi dongle (RTL8188EU) joined to the hotspot
+After=network-pre.target
+Wants=network-pre.target
+ConditionPathExists=/sys/class/net/wlx3c3300b35fb3
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/wifi-dongle.sh wlx3c3300b35fb3
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
