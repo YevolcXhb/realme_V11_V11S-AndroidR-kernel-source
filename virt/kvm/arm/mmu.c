@@ -1655,9 +1655,15 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 				ret = 1;
 				goto out_unlock;
 			}
-			kvm_err("unskippable store ipa=%pa hsr=%#lx pc=%#lx\n",
-				&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu),
-				(unsigned long)*vcpu_pc(vcpu));
+			{
+				u32 ins = 0;
+				kvm_vcpu_read_guest(vcpu, *vcpu_pc(vcpu), &ins, sizeof(ins));
+				kvm_err("nskip ipa=%pa hsr=%#lx wr=%d pc=%#lx ins=%#x sp=%#lx x1=%#lx\n",
+					&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu), write_fault,
+					(unsigned long)*vcpu_pc(vcpu), ins,
+					(unsigned long)vcpu_get_reg(vcpu, 31),
+					(unsigned long)vcpu_get_reg(vcpu, 1));
+			}
 		}
 
 		/*
