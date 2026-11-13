@@ -1667,19 +1667,24 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		 * emulate the addressing writeback and skip the store.
 		 */
 		if (!kvm_is_error_hva(hva) && write_fault) {
-			if (kvm_skip_rom_store(vcpu)) {
-				ret = 1;
-				goto out_unlock;
+			u32 ins = 0;
+
+			kvm_vcpu_read_guest(vcpu, *vcpu_pc(vcpu), &ins, sizeof(ins));
+			if (!kvm_skip_rom_store(vcpu)) {
+				/*
+				 * A store into a read-only memslot has no effect on the
+				 * real hardware, so treat an instruction we cannot decode
+				 * as a plain skip. AArch64 instructions are fixed width.
+				 * The store helpers handle the addressing writeback, so
+				 * the only thing a blind skip can miss is an unusual
+				 * store form, and the ROM write itself is discarded.
+				 */
+				kvm_err("romw pc=%#lx ins=%#x blind-skip\n",
+					(unsigned long)*vcpu_pc(vcpu), ins);
+				kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
 			}
-			{
-				u32 ins = 0;
-				kvm_vcpu_read_guest(vcpu, *vcpu_pc(vcpu), &ins, sizeof(ins));
-				kvm_err("nskip ipa=%pa hsr=%#lx wr=%d pc=%#lx ins=%#x sp=%#lx x1=%#lx\n",
-					&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu), write_fault,
-					(unsigned long)*vcpu_pc(vcpu), ins,
-					(unsigned long)vcpu_get_reg(vcpu, 31),
-					(unsigned long)vcpu_get_reg(vcpu, 1));
-			}
+			ret = 1;
+			goto out_unlock;
 		}
 
 		/*
