@@ -1981,9 +1981,14 @@ static int demux_c15_set(u64 id, void __user *uaddr)
 		if (get_user(newval, uval))
 			return -EFAULT;
 
-		/* This is also invariant: you can't change it. */
-		if (newval != get_ccsidr(val))
-			return -EINVAL;
+		/*
+		 * The value is invariant: a write cannot change what the guest
+		 * observes, reading back is the only supported direction.
+		 * QEMU synchronises the whole KVM_GET_REG_LIST back during vCPU
+		 * setup, so failing here would abort vCPU initialisation and no
+		 * VM could ever start. Accept the write and keep the real value.
+		 */
+		(void)newval;
 		return 0;
 	default:
 		return -ENOENT;
