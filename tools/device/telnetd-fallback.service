@@ -1,0 +1,17 @@
+[Unit]
+Description=busybox telnetd fallback console
+After=usbgadget-net.service
+# Port 23 is normally already held by the initramfs telnetd, which survives
+# switch_root. Only start our own when the gadget came up as usb0 and nothing
+# else could have taken the port.
+ConditionPathIsDirectory=/sys/class/net/usb0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/busybox-rmx telnetd -l /bin/sh -p 23
+Restart=on-failure
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Install]
+WantedBy=multi-user.target

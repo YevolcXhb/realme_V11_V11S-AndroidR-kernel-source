@@ -1,0 +1,20 @@
+[Unit]
+Description=DHCP for the USB gadget link (address only, no gateway)
+After=usbgadget-net.service
+Wants=usbgadget-net.service
+# The initramfs already runs a udhcpd for rndis0 and that process survives
+# switch_root, so this unit is only needed when the gadget enumerates as usb0
+# (i.e. the plain data cable). Without usb0 there is nothing to serve and
+# respawning would just fail forever.
+ConditionPathIsDirectory=/sys/class/net/usb0
+
+[Service]
+Type=simple
+ExecStartPre=/bin/rm -f /run/udhcpd-usb.leases
+ExecStart=/usr/bin/busybox-rmx udhcpd -f /etc/udhcpd-usb.conf
+Restart=on-failure
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Install]
+WantedBy=multi-user.target
