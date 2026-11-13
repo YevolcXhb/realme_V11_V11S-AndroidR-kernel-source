@@ -1505,73 +1505,67 @@ static bool kvm_skip_rom_store(struct kvm_vcpu *vcpu)
 	u32 insn;
 	unsigned long pc = *vcpu_pc(vcpu);
 	long long imm;
-	int rn, size, writeback;
+	int rn, size, writeback = 0;
 
 	if (kvm_vcpu_read_guest(vcpu, pc, &insn, sizeof(insn)))
 		return false;
 
-	/* pair stores */
-	switch (insn & 0xffc00000) {
-	case 0xa8800000:	/* stp x, x, [xn], #imm */
-	case 0xa9800000:	/* stp x, x, [xn, #imm]! */
-		size = 8; writeback = 1; goto pair;
-	case 0xa9000000:	/* stp x, x, [xn, #imm] */
-		size = 8; writeback = 0; goto pair;
-	case 0x28800000:	/* stp w, w, [xn], #imm */
-	case 0x29800000:	/* stp w, w, [xn, #imm]! */
-		size = 4; writeback = 1; goto pair;
-	case 0x29000000:	/* stp w, w, [xn, #imm] */
-		size = 4; writeback = 0; goto pair;
-	default:
-		goto single;
-	}
+	/* Pair stores: 29:27 == 0b101, bit 26 clear, signed imm7 scaled by size. */
+	if (((insn >> 27) & 7) == 5 && !(insn & (1u << 26))) {
+		int opc = insn >> 30;
+		int mode;
 
-pair:
-	imm = (insn >> 15) & 0x7f;
-	if (imm & 0x40)
-		imm -= 0x80;
-	imm *= size;
-	rn = (insn >> 5) & 0x1f;
-	if (writeback)
-		vcpu_set_reg(vcpu, rn, vcpu_get_reg(vcpu, rn) + imm);
-	goto skip;
-
-single:
-	/* single-register stores, immediate addressing */
-	switch (insn & 0xff800c00) {
-	case 0xf8000400:	/* str x, [xn], #imm  /  str x, [xn, #imm]! */
-	case 0xf8000c00:
-		size = 8; break;
-	case 0xb8000400:	/* str w variants */
-	case 0xb8000c00:
-		size = 4; break;
-	case 0x78000400:	/* strh variants */
-	case 0x78000c00:
-		size = 2; break;
-	case 0x38000400:	/* strb variants */
-	case 0x38000c00:
-		size = 1; break;
-	default:
-		switch (insn & 0xffc00000) {
-		case 0xf9000000:	/* str x, [xn, #imm] */
-		case 0xb9000000:	/* str w */
-		case 0x79000000:	/* strh */
-		case 0x39000000:	/* strb */
-			size = 0; break;	/* no writeback, just skip */
-		default:
-			kvm_err("noskip pc=%#lx insn=%#x\n", pc, insn);
+		if (opc != 0 && opc != 2)
 			return false;
-		}
+		size = (opc == 2) ? 8 : 4;
+		mode = (insn >> 23) & 3;
+		if (mode != 1 && mode != 2 && mode != 3)
+			return false;
+		imm = (insn >> 15) & 0x7f;
+		if (imm & 0x40)
+			imm -= 0x80;
+		imm *= size;
+		writeback = (mode == 1 || mode == 3);
+		rn = (insn >> 5) & 0x1f;
+		goto do_wb;
 	}
-	if (size) {
+
+	/* Single-register stores, immediate addressing. Bit 22 selects store. */
+	if (((insn >> 27) & 7) != 7)
+		return false;
+	if (insn & (1u << 22))
+		return false;
+
+	if (insn & (1u << 26)) {
+		/* SIMD&FP: bit 23 selects 128-bit, otherwise 31:30 gives 1/2/4/8. */
+		if (insn & (1u << 23))
+			size = 16;
+		else
+			size = 1 << ((insn >> 30) & 3);
+	} else {
+		size = 1 << ((insn >> 30) & 3);
+	}
+
+	rn = (insn >> 5) & 0x1f;
+	switch ((insn >> 24) & 3) {
+	case 1:
+		/* unsigned offset imm12: scaled, no writeback */
+		goto skip;
+	case 0:
+	case 3:
+		/* imm9 forms hold a plain byte offset, no scaling. */
 		imm = (insn >> 12) & 0x1ff;
 		if (imm & 0x100)
 			imm -= 0x200;
-		imm *= size;
-		rn = (insn >> 5) & 0x1f;
-		vcpu_set_reg(vcpu, rn, vcpu_get_reg(vcpu, rn) + imm);
+		writeback = ((insn >> 10) & 3) == 1 || ((insn >> 10) & 3) == 3;
+		goto do_wb;
+	default:
+		return false;
 	}
 
+do_wb:
+	if (writeback)
+		vcpu_set_reg(vcpu, rn, vcpu_get_reg(vcpu, rn) + imm);
 skip:
 	kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
 	return true;
@@ -1656,14 +1650,14 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		 * syndrome (ESR.ISV == 0) and cannot be decoded there, so
 		 * emulate the addressing writeback and skip the store.
 		 */
-		if (!kvm_is_error_hva(hva) && write_fault &&
-		    kvm_skip_rom_store(vcpu)) {
-			kvm_err("ROMWRITE ipa=%pa hsr=%#lx writable=%d err_hva=%d pc=%#lx\n",
-				&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu), writable,
-				kvm_is_error_hva(hva), (unsigned long)*vcpu_pc(vcpu));
-
-			ret = 1;
-			goto out_unlock;
+		if (!kvm_is_error_hva(hva) && write_fault) {
+			if (kvm_skip_rom_store(vcpu)) {
+				ret = 1;
+				goto out_unlock;
+			}
+			kvm_err("unskippable store ipa=%pa hsr=%#lx pc=%#lx\n",
+				&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu),
+				(unsigned long)*vcpu_pc(vcpu));
 		}
 
 		/*
