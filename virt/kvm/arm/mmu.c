@@ -1508,12 +1508,12 @@ out:
  */
 static void kvm_store_writeback(struct kvm_vcpu *vcpu, int rn, long long imm)
 {
-	struct user_pt_regs *regs = vcpu_gp_regs(vcpu);
+	struct kvm_regs *regs = vcpu_gp_regs(vcpu);
 
 	if (rn == 31)
-		regs->sp += imm;
+		regs->regs.sp += imm;
 	else
-		regs->regs[rn] += imm;
+		regs->regs.regs[rn] += imm;
 }
 
 static bool kvm_skip_rom_store(struct kvm_vcpu *vcpu)
