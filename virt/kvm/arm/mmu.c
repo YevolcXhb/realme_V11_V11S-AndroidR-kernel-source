@@ -1616,6 +1616,10 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		 */
 		if (!kvm_is_error_hva(hva) && write_fault &&
 		    kvm_skip_rom_store(vcpu)) {
+			kvm_err("ROMWRITE ipa=%pa hsr=%#lx writable=%d err_hva=%d pc=%#lx\n",
+				&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu), writable,
+				kvm_is_error_hva(hva), (unsigned long)*vcpu_pc(vcpu));
+
 			ret = 1;
 			goto out_unlock;
 		}
