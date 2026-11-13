@@ -1505,20 +1505,24 @@ static bool kvm_skip_rom_store(struct kvm_vcpu *vcpu)
 	u32 insn;
 	unsigned long pc = *vcpu_pc(vcpu);
 	long long imm;
-	int rn, size;
+	int rn, size, writeback;
 
 	if (kvm_vcpu_read_guest(vcpu, pc, &insn, sizeof(insn)))
 		return false;
 
 	switch (insn & 0xffc00000) {
 	case 0xa8800000:	/* stp x, x, [xn], #imm */
+		size = 8; writeback = 1; break;
 	case 0xa9800000:	/* stp x, x, [xn, #imm]! */
-		size = 8;
-		break;
+		size = 8; writeback = 1; break;
+	case 0xa9000000:	/* stp x, x, [xn, #imm] */
+		size = 8; writeback = 0; break;
 	case 0x28800000:	/* stp w, w, [xn], #imm */
+		size = 4; writeback = 1; break;
 	case 0x29800000:	/* stp w, w, [xn, #imm]! */
-		size = 4;
-		break;
+		size = 4; writeback = 1; break;
+	case 0x29000000:	/* stp w, w, [xn, #imm] */
+		size = 4; writeback = 0; break;
 	default:
 		return false;
 	}
@@ -1529,7 +1533,8 @@ static bool kvm_skip_rom_store(struct kvm_vcpu *vcpu)
 	imm *= size;
 
 	rn = (insn >> 5) & 0x1f;
-	vcpu_set_reg(vcpu, rn, vcpu_get_reg(vcpu, rn) + imm);
+	if (writeback)
+		vcpu_set_reg(vcpu, rn, vcpu_get_reg(vcpu, rn) + imm);
 
 	kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
 	return true;
