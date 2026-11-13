@@ -1541,6 +1541,10 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 	hva = gfn_to_hva_memslot_prot(memslot, gfn, &writable);
 	write_fault = kvm_is_write_fault(vcpu);
 	if (kvm_is_error_hva(hva) || (write_fault && !writable)) {
+		kvm_err("S2ABORT ipa=%pa hsr=%#lx write=%d writable=%d err_hva=%d pc=%#lx\n",
+			&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu),
+			write_fault, writable, kvm_is_error_hva(hva),
+			(unsigned long)*vcpu_pc(vcpu));
 		if (is_iabt) {
 			/* Prefetch Abort on I/O address */
 			kvm_inject_pabt(vcpu, kvm_vcpu_get_hfar(vcpu));
