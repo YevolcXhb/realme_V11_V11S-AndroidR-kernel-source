@@ -1,0 +1,12 @@
+[Unit]
+Description=Reload ufw rules (kernel has no xt_LOG, so logging must stay off)
+After=ufw.service network-pre.target
+Wants=ufw.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ufw-reload.sh
+
+[Install]
+WantedBy=multi-user.target
