@@ -51,3 +51,16 @@ firmware memslot，产生的 stage-2 异常无法被这颗厂商 KVM 解码
 * 面板显示「未检测到 libvirt/storage」：刷新页面或点「重新检测」；
   依赖判定是 `/dev/kvm` + `/var/lib/libvirt/images` + `qemu:///system` 可连。
 * 面板关机按钮无效：这些域没有 ACPI，请用强制停止或客户机内 `poweroff`。
+## 追加验证（2026-11-14）
+
+为判断 UEFI 问题是否只出在「写只读区指令无法解码」，内核追加了一次实验
+（commit 746a6245）：无法解码的写只读区故障改为无条件跳过 4 字节。
+
+结果：标准 AAVMF 固件不再报 `Function not implemented`，但陷入 0x36d0 与
+0x36f8 之间的循环。日志显示被跳过的指令是 `ldurb`/`ldrb` 类**加载**指令，
+而异常报告的是**写**：这颗厂商 KVM 的异常综合征（ESR）与 PC 在该路径上不自洽。
+跳过加载会破坏固件的数据流，因此该内核被回退，设备回到 commit f65d7852 的
+稳定内核。
+
+结论：UEFI 引导失败是固件与该厂商 KVM 的交互层问题，与 KVM 基本能力、
+libvirt、QEMU 都没有关系；内核直启的虚拟机不受影响。
