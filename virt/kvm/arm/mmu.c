@@ -1541,10 +1541,6 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 	hva = gfn_to_hva_memslot_prot(memslot, gfn, &writable);
 	write_fault = kvm_is_write_fault(vcpu);
 	if (kvm_is_error_hva(hva) || (write_fault && !writable)) {
-		kvm_err("S2ABORT ipa=%pa hsr=%#lx write=%d writable=%d err_hva=%d pc=%#lx\n",
-			&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu),
-			write_fault, writable, kvm_is_error_hva(hva),
-			(unsigned long)*vcpu_pc(vcpu));
 		if (is_iabt) {
 			/* Prefetch Abort on I/O address */
 			kvm_inject_pabt(vcpu, kvm_vcpu_get_hfar(vcpu));
@@ -1563,6 +1559,20 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		 * cautious, and skip the instruction.
 		 */
 		if (kvm_vcpu_dabt_is_cm(vcpu)) {
+			kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
+			ret = 1;
+			goto out_unlock;
+		}
+		/*
+		 * A write into a read-only memory slot targets ROM/flash.
+		 * Hardware silently ignores such a store, and userspace
+		 * emulates it the same way through the MMIO exit. But
+		 * instructions such as stp/ldp have no valid syndrome
+		 * (ESR.ISV == 0), so io_mem_abort() cannot decode them and
+		 * fails the vCPU. Skip the store instead: it has no effect
+		 * on either side.
+		 */
+		if (!kvm_is_error_hva(hva) && write_fault) {
 			kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
 			ret = 1;
 			goto out_unlock;
