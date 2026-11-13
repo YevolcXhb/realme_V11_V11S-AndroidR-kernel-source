@@ -1500,6 +1500,22 @@ out:
  * makes io_mem_abort() bail out with -ENOSYS and kills the vCPU. AAVMF
  * hits it while filling the region below its own load address.
  */
+/*
+ * Write back the base register of a skipped store. Register 31 means SP
+ * here, and vcpu_set_reg() silently drops it ("register 31 is XZR"), so
+ * the stack pointer has to be updated explicitly - missing this drift is
+ * what made the firmware write all over the place.
+ */
+static void kvm_store_writeback(struct kvm_vcpu *vcpu, int rn, long long imm)
+{
+	struct user_pt_regs *regs = vcpu_gp_regs(vcpu);
+
+	if (rn == 31)
+		regs->sp += imm;
+	else
+		regs->regs[rn] += imm;
+}
+
 static bool kvm_skip_rom_store(struct kvm_vcpu *vcpu)
 {
 	u32 insn;
@@ -1565,7 +1581,7 @@ static bool kvm_skip_rom_store(struct kvm_vcpu *vcpu)
 
 do_wb:
 	if (writeback)
-		vcpu_set_reg(vcpu, rn, vcpu_get_reg(vcpu, rn) + imm);
+		kvm_store_writeback(vcpu, rn, imm);
 skip:
 	kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
 	return true;
