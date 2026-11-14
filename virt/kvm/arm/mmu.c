@@ -1679,7 +1679,9 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 				 * the only thing a blind skip can miss is an unusual
 				 * store form, and the ROM write itself is discarded.
 				 */
-				kvm_err("romw pc=%#lx ins=%#x blind-skip\n",
+				kvm_err("romw ipa=%pa hsr=%#lx wr=%d hva=%#lx mflags=%#x pc=%#lx ins=%#x\n",
+					&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu), write_fault,
+					(unsigned long)hva, memslot ? (unsigned int)memslot->flags : 0,
 					(unsigned long)*vcpu_pc(vcpu), ins);
 				kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
 			}
