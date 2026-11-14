@@ -89,20 +89,17 @@ defconfig 追加：
 注意：升级内核后如果用到 USB Wi-Fi 网卡（r8188eu），必须使用与内核同一次构建的模块，
 否则 systemd-modules-load 会报 Exec format error（modversions 不匹配）。
 
-## reboot 卡死与修复（2026-11-14）
+## reboot 慢/像卡死的正确结论（2026-11-14 修正）
 
-现象：SSH 或 1Panel 点重启后，关机流程正常走完（日志到 reboot.target、systemd-shutdown 执行、journal 停止），
-但设备没有复位：网络断开、看起来"睡死"，需要手动按电源键。内核日志在关机末尾直接断掉，
-没有 `reboot: Restarting system`。
+之前的判断（"内核复位不生效"）是**错的**，证据推翻了它：
 
-对比：`reboot -f` 一直正常（约 25-30 秒回来），说明内核复位路径本身没问题，
-是完整关机序列后的最后一步被厂商内核卡住。
+1. 虚拟机停止时，原生 systemctl reboot 30 秒内正常重启。
+2. 虚拟机运行时，reboot 会很久才回来（之前以为卡死要按电源键），实际是关机被拖了约 3 分钟。
 
-修复：tools/system/fix-reboot.sh 安装 force-reboot-sysrq.service，在 reboot.target 阶段
-（不影响 poweroff）先 sync 再用 SysRq 强制复位：
+真正原因：libvirt-guests 服务在关机前先要求客户机优雅关机，默认 SHUTDOWN_TIMEOUT=120 秒；
+Alpine 客户机没有 acpid，不响应 ACPI 关机请求，宿主机就干等两分钟再强制结束。
 
-```
-ExecStart=/bin/sh -c "sync; sync; echo 1 > /proc/sys/kernel/sysrq; echo b > /proc/sysrq-trigger"
-```
+修复：/etc/default/libvirt-guests 设置 ON_SHUTDOWN=shutdown、SHUTDOWN_TIMEOUT=25。
+实测：虚拟机运行中执行 reboot，60 秒左右回到系统（关机约 25 秒 + 启动约 30 秒）。
 
-验证：执行 `sync; systemctl reboot`，设备 28 秒后正常回到系统，1Panel/Docker/虚拟机全部自动恢复。
+因此**不需要改内核**。SysRq 强制复位单元保留为兜底但默认不启用（避免跳过正常关机）。
