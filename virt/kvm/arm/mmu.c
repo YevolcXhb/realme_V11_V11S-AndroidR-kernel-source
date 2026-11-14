@@ -1694,6 +1694,13 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		 * of the page size.
 		 */
 		fault_ipa |= kvm_vcpu_get_hfar(vcpu) & ((1 << 12) - 1);
+		if (!(kvm_vcpu_get_hsr(vcpu) & (1u << 24))) {
+			u32 ins = 0;
+			kvm_vcpu_read_guest(vcpu, *vcpu_pc(vcpu), &ins, sizeof(ins));
+			kvm_err("abort ipa=%pa hsr=%#lx wr=%d pc=%#lx ins=%#x\n",
+				&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu), write_fault,
+				(unsigned long)*vcpu_pc(vcpu), ins);
+		}
 		ret = io_mem_abort(vcpu, run, fault_ipa);
 		goto out_unlock;
 	}
