@@ -103,3 +103,35 @@ Alpine 客户机没有 acpid，不响应 ACPI 关机请求，宿主机就干等�
 实测：虚拟机运行中执行 reboot，60 秒左右回到系统（关机约 25 秒 + 启动约 30 秒）。
 
 因此**不需要改内核**。SysRq 强制复位单元保留为兜底但默认不启用（避免跳过正常关机）。
+
+### 内核第三轮：xt_LOG 让 ufw 原生工作（2026-11-14）
+
+内核 defconfig 增加：
+
+    CONFIG_NETFILTER_XT_TARGET_LOG=y
+    CONFIG_NETFILTER_XT_MATCH_LIMIT=y
+
+之前的 workaround（ufw-reload.service：开机强制重载 ufw 并关闭日志）已删除，原因不再存在：
+
+* 原来内核没有 xt_LOG，ufw 生成的 "-j LOG" 规则会让 iptables-restore 整体失败，
+  结果防火墙 active 但规则为空（这也是早期 SSH 被挡的根源）。
+* 现在 LOG target 编进内核，ufw 可以正常带日志运行（Logging: on (low)）。
+
+顺带修掉了启动里的一段空等：
+
+* /etc/network/interfaces 删掉 "allow-hotplug eth0 / iface eth0 inet dhcp"。
+  wired-connect@eth0.service 本来就会配置有线网卡，这个 ifupdown 配置只会让
+  systemd 在没插扩展坞时等 eth0 设备 90 秒。
+
+实测（重启后）：
+
+| 项 | 结果 |
+|---|---|
+| 系统状态 | systemctl is-system-running = running（无挂起任务） |
+| 总启动 | 5.39 s 内核 + 15.96 s 用户态 = 21.35 s |
+| 到 multi-user | 13.2 s |
+| 防火墙 | ufw active，Logging: on (low)，无 ufw-reload 服务 |
+| 网络 | eth0 192.168.123.50 + wlan0 DHCP 都正常 |
+
+注意：内核配置变化后 r8188eu 模块的 modversions CRC 会变，需要用同一次构建的
+tools/modules/r8188eu.ko 替换（ROM 已同步更新）。
