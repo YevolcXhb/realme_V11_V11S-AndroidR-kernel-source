@@ -1,0 +1,14 @@
+[Unit]
+Description=DHCP lease for the USB Wi-Fi adapter
+BindsTo=sys-subsystem-net-devices-wlxusb0.device
+After=usbwifi-link.service
+Wants=usbwifi-link.service
+
+[Service]
+Type=simple
+ExecStart=/sbin/dhclient -4 -d -1 wlxusb0
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

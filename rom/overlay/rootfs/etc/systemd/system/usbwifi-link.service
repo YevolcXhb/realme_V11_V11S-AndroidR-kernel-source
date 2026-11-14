@@ -1,0 +1,14 @@
+[Unit]
+Description=USB Wi-Fi link (RTL8188EU, WEXT via wpa_supplicant 2.9)
+BindsTo=sys-subsystem-net-devices-wlxusb0.device
+After=sys-subsystem-net-devices-wlxusb0.device usbwifi-load.service
+Wants=usbwifi-load.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/wpa_supplicant29 -i wlxusb0 -D wext -c /etc/wpa_supplicant/wpa_supplicant-usb.conf
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=Load the optional RTL8188EU USB Wi-Fi driver
+# Run only after the on-board MediaTek radio has claimed wlan0, so the USB
+# adapter can never win the name race; udev then renames it to wlxusb0.
+After=mtkwifi-init.service
+Wants=mtkwifi-init.service
+ConditionPathExists=!/sys/class/net/wlxusb0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/modprobe r8188eu
+
+[Install]
+WantedBy=multi-user.target

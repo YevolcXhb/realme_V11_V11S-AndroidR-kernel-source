@@ -1,0 +1,6 @@
+# Pin the USB adapter to its own predictable name so it can never take wlan0.
+[Match]
+MACAddress=3c:33:00:b3:5f:b3
+
+[Link]
+Name=wlxusb0

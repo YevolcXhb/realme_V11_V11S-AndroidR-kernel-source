@@ -49,6 +49,10 @@ for m in r8188eu.ko wmt_drv.ko wmt_chrdev_wifi.ko wlan_6833_axi.ko; do
 done
 sudo ln -sfn /usr/lib/modules "$ROOTFS/lib/modules" 2>/dev/null || true
 
+echo "== wpa_supplicant 2.9 (WEXT backend for the USB adapter) =="
+curl -fsSL "$ASSETS/wpa_supplicant29" -o /tmp/wpa_supplicant29
+sudo install -m 755 /tmp/wpa_supplicant29 "$ROOTFS/usr/local/sbin/wpa_supplicant29"
+
 echo "== patched QEMU + AAVMF =="
 curl -fsSL "$ASSETS/qemu-system-aarch64-patched" -o /tmp/qemu-system-aarch64
 sudo install -m 755 /tmp/qemu-system-aarch64 "$ROOTFS/usr/bin/qemu-system-aarch64"
@@ -71,6 +75,17 @@ sed -i "s/^#\?PermitRootLogin.*/PermitRootLogin yes/;s/^#\?PasswordAuthenticatio
 systemctl enable ssh docker libvirtd libvirt-guests systemd-networkd autofs 2>/dev/null || true
 systemctl enable mtkwifi-init wifi-connect@wlan0 wired-connect@eth0 usbgadget-net 2>/dev/null || true
 systemctl enable growroot 2>/dev/null || true
+# autofs ships with After/Wants=network-online.target, which never activates on
+# this box (systemd-networkd does not manage the interfaces), so automount would
+# wait forever. Point it at local-fs instead.
+sed -i "s/^After=network.target ypbind.service sssd.service network-online.target remote-fs.target$/After=network.target ypbind.service sssd.service remote-fs.target local-fs.target/" /usr/lib/systemd/system/autofs.service
+sed -i "s/^Wants=network-online.target nfs-client.target$/Wants=local-fs.target/" /usr/lib/systemd/system/autofs.service
+systemctl disable systemd-networkd-wait-online.service 2>/dev/null || true
+systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
+systemctl disable atd.service 2>/dev/null || true
+systemctl enable usbwifi-load usbwifi-link usbwifi-dhcp 2>/dev/null || true
+mkdir -p /media/usb
+chmod 755 /usr/local/sbin/wpa_supplicant29 2>/dev/null || true
 ln -sf /etc/systemd/system/kvm-net-fw.timer /etc/systemd/system/timers.target.wants/kvm-net-fw.timer 2>/dev/null || true
 mkdir -p /etc/libvirt/qemu/networks/autostart /etc/libvirt/storage/autostart /var/lib/libvirt/images
 ln -sf ../default.xml /etc/libvirt/qemu/networks/autostart/default.xml
