@@ -1,0 +1,13 @@
+[Unit]
+Description=Force the hardware reset through sysrq (vendor kernel hangs on clean reboot)
+DefaultDependencies=no
+Before=systemd-reboot.service shutdown.target
+Wants=systemd-reboot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'sync; sync; echo 1 > /proc/sys/kernel/sysrq; echo b > /proc/sysrq-trigger; sleep 5'
+
+[Install]
+WantedBy=reboot.target

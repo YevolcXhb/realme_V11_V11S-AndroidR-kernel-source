@@ -88,3 +88,21 @@ defconfig 追加：
 
 注意：升级内核后如果用到 USB Wi-Fi 网卡（r8188eu），必须使用与内核同一次构建的模块，
 否则 systemd-modules-load 会报 Exec format error（modversions 不匹配）。
+
+## reboot 卡死与修复（2026-11-14）
+
+现象：SSH 或 1Panel 点重启后，关机流程正常走完（日志到 reboot.target、systemd-shutdown 执行、journal 停止），
+但设备没有复位：网络断开、看起来"睡死"，需要手动按电源键。内核日志在关机末尾直接断掉，
+没有 `reboot: Restarting system`。
+
+对比：`reboot -f` 一直正常（约 25-30 秒回来），说明内核复位路径本身没问题，
+是完整关机序列后的最后一步被厂商内核卡住。
+
+修复：tools/system/fix-reboot.sh 安装 force-reboot-sysrq.service，在 reboot.target 阶段
+（不影响 poweroff）先 sync 再用 SysRq 强制复位：
+
+```
+ExecStart=/bin/sh -c "sync; sync; echo 1 > /proc/sys/kernel/sysrq; echo b > /proc/sysrq-trigger"
+```
+
+验证：执行 `sync; systemctl reboot`，设备 28 秒后正常回到系统，1Panel/Docker/虚拟机全部自动恢复。
