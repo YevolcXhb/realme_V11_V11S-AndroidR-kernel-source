@@ -1,6 +1,5 @@
 #!/bin/bash
-# Build the flashable userdata.img for realme V11 (RMX3122 / MT6833):
-# Ubuntu 24.04 arm64 + Docker + libvirt + patched QEMU/AAVMF + MTK Wi-Fi stack.
+# Build the flashable userdata.img for realme V11 (RMX3122 / MT6833).
 set -euo pipefail
 
 REPO="$GITHUB_REPOSITORY"
@@ -17,11 +16,11 @@ sudo apt-get update -y
 sudo apt-get install -y debootstrap qemu-user-static binfmt-support e2fsprogs rsync
 sudo update-binfmts --enable qemu-aarch64 || true
 
-echo "== debootstrap $SUITE arm64 =="
+echo "== debootstrap =="
 sudo rm -rf "$ROOTFS"
 sudo debootstrap --arch=arm64 --variant=minbase --components=main,universe --include=apt,ca-certificates "$SUITE" "$ROOTFS" "$MIRROR"
 
-echo "== install packages (qemu-user, slow) =="
+echo "== install packages =="
 sudo mount --bind /proc "$ROOTFS/proc"
 sudo mount --bind /sys "$ROOTFS/sys"
 sudo mount --bind /dev "$ROOTFS/dev"
@@ -30,15 +29,23 @@ printf 'deb %s noble main universe\ndeb %s noble-updates main universe\ndeb %s n
 sudo cp /tmp/sources.list "$ROOTFS/etc/apt/sources.list"
 sudo chroot "$ROOTFS" /bin/bash -c "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -q --no-install-recommends $PKGS"
 
-echo "== overlay (scripts, firmware, configs) =="
-sudo rsync -a rom/overlay/rootfs/ "$ROOTFS/"
+echo "== overlay =="
+# --keep-dirlinks: /lib, /bin, /sbin are symlinks into /usr on Ubuntu; a plain
+# -a copy of a real "lib" directory in the overlay would replace the symlink and
+# break the dynamic loader.
+sudo rsync -aK rom/overlay/rootfs/ "$ROOTFS/"
+if [ ! -e "$ROOTFS/lib/ld-linux-aarch64.so.1" ]; then
+    echo "FATAL: dynamic loader missing after overlay" >&2
+    exit 1
+fi
 
-echo "== kernel modules from release =="
-sudo mkdir -p "$ROOTFS/lib/modules/4.14.186+/extra"
+echo "== kernel modules =="
+sudo mkdir -p "$ROOTFS/usr/lib/modules/4.14.186+/extra"
 for m in r8188eu.ko wmt_drv.ko wmt_chrdev_wifi.ko wlan_6833_axi.ko; do
     curl -fsSL "$ASSETS/$m" -o "/tmp/$m"
-    sudo install -m 644 "/tmp/$m" "$ROOTFS/lib/modules/4.14.186+/extra/$m"
+    sudo install -m 644 "/tmp/$m" "$ROOTFS/usr/lib/modules/4.14.186+/extra/$m"
 done
+sudo ln -sfn /usr/lib/modules "$ROOTFS/lib/modules" 2>/dev/null || true
 
 echo "== patched QEMU + AAVMF =="
 curl -fsSL "$ASSETS/qemu-system-aarch64-patched" -o /tmp/qemu-system-aarch64
