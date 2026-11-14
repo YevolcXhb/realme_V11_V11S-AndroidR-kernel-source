@@ -847,12 +847,12 @@ CONFIG_DEFAULT_FQ=y
 
 # hugetlb.c does not build with this clang on 4.14 (-Werror array-bounds),
 # so huge pages stay off; THP below gives the anonymous-memory win.
+# FTRACE and DEBUG_KERNEL stay on: vendor MTK DRM/net code uses
+# trace_printk and stack_trace. Only per-event instrumentation is off.
 # --- server tuning round 2: drop debug instrumentation, enable huge pages ---
-# CONFIG_DEBUG_KERNEL is not set
 # CONFIG_SCHEDSTATS is not set
 # CONFIG_SCHED_DEBUG is not set
 # CONFIG_UPROBES is not set
-# CONFIG_FTRACE is not set
 CONFIG_TRANSPARENT_HUGEPAGE=y
 CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
 # CONFIG_HUGETLBFS is not set
