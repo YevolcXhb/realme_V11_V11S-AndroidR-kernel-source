@@ -9,7 +9,7 @@ IMG="$PWD/userdata.img"
 SUITE=noble
 MIRROR=http://ports.ubuntu.com/ubuntu-ports
 
-PKGS="ubuntu-minimal ca-certificates curl wget openssh-server usbutils pciutils iproute2 net-tools iputils-ping less vim-tiny sudo rsync kmod procps psmisc tzdata locales man-db gnupg systemd-timesyncd isc-dhcp-client wpasupplicant wireless-tools rfkill python3 htop file unzip zip tar gzip xz-utils nano bash-completion lsof docker.io docker-compose-v2 qemu-system-arm qemu-utils libvirt-daemon-system libvirt-clients bridge-utils dnsmasq-base libxml2-utils"
+PKGS="ubuntu-minimal ca-certificates curl wget openssh-server usbutils pciutils iproute2 net-tools iputils-ping less vim-tiny sudo rsync kmod procps psmisc tzdata locales man-db gnupg systemd-timesyncd isc-dhcp-client wpasupplicant wireless-tools rfkill python3 htop file unzip zip tar gzip xz-utils nano bash-completion lsof docker.io docker-compose-v2 qemu-system-arm qemu-utils libvirt-daemon-system libvirt-clients bridge-utils dnsmasq-base libxml2-utils autofs ntfs-3g"
 
 echo "== host dependencies =="
 sudo apt-get update -y
@@ -30,14 +30,16 @@ sudo cp /tmp/sources.list "$ROOTFS/etc/apt/sources.list"
 sudo chroot "$ROOTFS" /bin/bash -c "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -q --no-install-recommends $PKGS"
 
 echo "== overlay =="
-# --keep-dirlinks: /lib, /bin, /sbin are symlinks into /usr on Ubuntu; a plain
-# -a copy of a real "lib" directory in the overlay would replace the symlink and
-# break the dynamic loader.
-sudo rsync -aK rom/overlay/rootfs/ "$ROOTFS/"
+# --keep-dirlinks: /lib, /bin, /sbin are symlinks into /usr on Ubuntu.
+# --no-owner/--no-group: the CI checkout is owned by uid 1001; without these
+# flags /etc and /usr would end up owned by 1001 and tools such as ufw abort
+# with "WARN: uid is 0 but '/etc' is owned by 1001".
+sudo rsync -aK --no-owner --no-group rom/overlay/rootfs/ "$ROOTFS/"
 if [ ! -e "$ROOTFS/lib/ld-linux-aarch64.so.1" ]; then
     echo "FATAL: dynamic loader missing after overlay" >&2
     exit 1
 fi
+sudo chown -R root:root "$ROOTFS/etc" "$ROOTFS/usr" "$ROOTFS/var" "$ROOTFS/opt" 2>/dev/null || true
 
 echo "== kernel modules =="
 sudo mkdir -p "$ROOTFS/usr/lib/modules/4.14.186+/extra"
@@ -63,9 +65,10 @@ fi
 echo "== system configuration =="
 sudo chroot "$ROOTFS" /bin/bash -c '
 set -e
+mkdir -p /media/usb
 echo "root:root" | chpasswd
 sed -i "s/^#\?PermitRootLogin.*/PermitRootLogin yes/;s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config
-systemctl enable ssh docker libvirtd libvirt-guests systemd-networkd 2>/dev/null || true
+systemctl enable ssh docker libvirtd libvirt-guests systemd-networkd autofs 2>/dev/null || true
 systemctl enable mtkwifi-init wifi-connect@wlan0 wired-connect@eth0 usbgadget-net 2>/dev/null || true
 systemctl enable growroot 2>/dev/null || true
 ln -sf /etc/systemd/system/kvm-net-fw.timer /etc/systemd/system/timers.target.wants/kvm-net-fw.timer 2>/dev/null || true
@@ -84,7 +87,7 @@ mkfs.ext4 -q -F -L ubuntu-rootfs -m 1 "$IMG"
 mkdir -p /tmp/rommnt
 sudo mount -o loop "$IMG" /tmp/rommnt
 sudo rsync -aHAX --numeric-ids "$ROOTFS/" /tmp/rommnt/
-sudo mkdir -p /tmp/rommnt/proc /tmp/rommnt/sys /tmp/rommnt/dev /tmp/rommnt/run /tmp/rommnt/tmp /tmp/rommnt/mnt /tmp/rommnt/media
+sudo mkdir -p /tmp/rommnt/proc /tmp/rommnt/sys /tmp/rommnt/dev /tmp/rommnt/run /tmp/rommnt/tmp /tmp/rommnt/mnt /tmp/rommnt/media /tmp/rommnt/media/usb
 sudo chmod 1777 /tmp/rommnt/tmp
 sudo sync
 sudo umount /tmp/rommnt

@@ -862,3 +862,7 @@ CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
 CONFIG_NETFILTER_XT_TARGET_LOG=y
 CONFIG_NETFILTER_XT_MATCH_LIMIT=y
 
+# --- removable-media automount (autofs4: kernel side, no udev rule needed) ---
+# --- plus the netfilter match used by the panel firewall port ranges ---
+CONFIG_AUTOFS4_FS=y
+CONFIG_NETFILTER_XT_MATCH_MULTIPORT=y

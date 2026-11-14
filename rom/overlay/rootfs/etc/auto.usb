@@ -1,0 +1,4 @@
+# One wildcard entry: /media/usb/<device> -> /dev/<device>
+# fstype=auto lets mount probe the filesystem (see /etc/filesystems, which lists
+# ntfs so mount.ntfs from ntfs-3g handles NTFS cards; the 4.14 kernel has no ntfs driver).
+*	-fstype=auto,nosuid,nodev	:/dev/&
