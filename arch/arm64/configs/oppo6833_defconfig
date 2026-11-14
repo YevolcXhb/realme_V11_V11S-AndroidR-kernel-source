@@ -861,3 +861,7 @@ CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
 # --- server tuning round 3: xt_LOG so ufw can keep its logging rules ---
 CONFIG_NETFILTER_XT_TARGET_LOG=y
 CONFIG_NETFILTER_XT_MATCH_LIMIT=y
+
+# --- USB Wi-Fi (RTL8188EU, WEXT-only driver) needs a cfg80211-based WEXT bridge ---
+CONFIG_CFG80211_WEXT=y
+CONFIG_WIRELESS_EXT_SYSFS=y
