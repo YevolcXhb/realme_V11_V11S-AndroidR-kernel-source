@@ -417,7 +417,7 @@ CONFIG_NLS_ISO8859_1=y
 CONFIG_NLS_UTF8=y
 CONFIG_PRINTK_TIME=y
 CONFIG_DYNAMIC_DEBUG=y
-CONFIG_DEBUG_INFO=y
+# CONFIG_DEBUG_INFO is not set
 CONFIG_FRAME_WARN=3600
 CONFIG_PANIC_ON_OOPS=y
 CONFIG_PANIC_TIMEOUT=1
@@ -837,3 +837,10 @@ CONFIG_NF_LOG_IPV6=y
 #
 CONFIG_R8188EU=m
 CONFIG_88EU_AP_MODE=y
+
+# --- server tuning: BBR congestion control + fair queueing ---
+CONFIG_TCP_CONG_BBR=y
+CONFIG_NET_SCH_FQ=y
+CONFIG_DEFAULT_FQ=y
+# --- drop debug info: build size only, no runtime effect ---
+# CONFIG_DEBUG_INFO is not set
