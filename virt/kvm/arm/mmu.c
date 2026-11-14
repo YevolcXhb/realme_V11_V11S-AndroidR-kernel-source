@@ -1666,23 +1666,20 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		 * syndrome (ESR.ISV == 0) and cannot be decoded there, so
 		 * emulate the addressing writeback and skip the store.
 		 */
-		if (!kvm_is_error_hva(hva) && write_fault) {
-			u32 ins = 0;
-
-			kvm_vcpu_read_guest(vcpu, *vcpu_pc(vcpu), &ins, sizeof(ins));
+		/*
+		 * A store that cannot be decoded (ESR.ISV == 0, e.g. a pair store)
+		 * cannot be handed to userspace, because the MMIO exit carries no
+		 * access size. Decodable stores are left alone: QEMU emulates them
+		 * properly (flash command writes have to reach the device).
+		 */
+		if (write_fault && !(kvm_vcpu_get_hsr(vcpu) & (1u << 24))) {
 			if (!kvm_skip_rom_store(vcpu)) {
-				/*
-				 * A store into a read-only memslot has no effect on the
-				 * real hardware, so treat an instruction we cannot decode
-				 * as a plain skip. AArch64 instructions are fixed width.
-				 * The store helpers handle the addressing writeback, so
-				 * the only thing a blind skip can miss is an unusual
-				 * store form, and the ROM write itself is discarded.
-				 */
-				kvm_err("romw ipa=%pa hsr=%#lx wr=%d hva=%#lx mflags=%#x pc=%#lx ins=%#x\n",
-					&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu), write_fault,
-					(unsigned long)hva, memslot ? (unsigned int)memslot->flags : 0,
-					(unsigned long)*vcpu_pc(vcpu), ins);
+				u32 ins = 0;
+
+				kvm_vcpu_read_guest(vcpu, *vcpu_pc(vcpu), &ins, sizeof(ins));
+				kvm_err("romskip ipa=%pa hsr=%#lx hva=%#lx pc=%#lx ins=%#x\n",
+					&fault_ipa, (unsigned long)kvm_vcpu_get_hsr(vcpu),
+					(unsigned long)hva, (unsigned long)*vcpu_pc(vcpu), ins);
 				kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
 			}
 			ret = 1;
