@@ -1,0 +1,16 @@
+[Unit]
+Description=MediaTek connectivity stack init (modules, chip id, STP transport)
+After=systemd-modules-load.service
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/mtkwifi-init.sh
+TimeoutSec=60
+# a half-initialised stack must not take the machine down with it
+SuccessExitStatus=0
+
+[Install]
+WantedBy=multi-user.target

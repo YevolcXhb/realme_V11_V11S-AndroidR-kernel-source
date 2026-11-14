@@ -1,0 +1,8 @@
+[Unit]
+Description=Keep libvirt NAT usable together with the 1Panel firewall
+After=libvirtd.service 1panel-core.service
+Wants=libvirtd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kvm-net-fw.sh

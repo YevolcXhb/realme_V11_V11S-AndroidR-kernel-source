@@ -1,0 +1,10 @@
+# RMX3122 / MT6833
+auto lo
+iface lo inet loopback
+
+# eth0 is handled by wired-connect@eth0.service (DHCP probe, then static).
+# Do not add an allow-hotplug eth0 stanza: systemd would wait 90 s for a device
+# that does not exist when the dock is not attached.
+
+allow-hotplug usb0
+iface usb0 inet dhcp

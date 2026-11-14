@@ -1,0 +1,16 @@
+[Unit]
+Description=Wi-Fi connect (%I)
+# No ordering against network.target on purpose: this unit *is* what brings the
+# link up. Waiting for network.target delayed the whole connection by ~85 s on
+# the test device.
+After=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/wifi-connect.sh %I
+TimeoutSec=120
+
+[Install]
+WantedBy=multi-user.target

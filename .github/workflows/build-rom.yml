@@ -1,0 +1,44 @@
+name: Build ROM image (userdata.img)
+
+# Builds the flashable Ubuntu 24.04 arm64 image from scratch on an x86_64
+# runner: debootstrap of an arm64 rootfs, package install under qemu-user,
+# the patched QEMU/AAVMF and the MTK Wi-Fi modules from the "rom-assets"
+# release, then a 6 GiB ext4 image published as a release asset.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to publish the image under (empty = rom-build-<sha>)
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build userdata.img
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Build image
+        run: |
+          chmod +x rom/build.sh
+          bash rom/build.sh
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$TAG" ]; then TAG="rom-build-${GITHUB_SHA::12}"; fi
+          gh release create "$TAG" --title "ROM image $TAG" \
+            --notes "Ubuntu 24.04 arm64 userdata image built by CI. Flash boot.img from the build-* release plus this userdata.img." \
+            userdata.img.gz userdata.img.gz.sha256 || \
+          gh release upload "$TAG" userdata.img.gz userdata.img.gz.sha256 --clobber

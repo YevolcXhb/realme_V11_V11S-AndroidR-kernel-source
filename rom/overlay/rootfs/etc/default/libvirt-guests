@@ -1,0 +1,5 @@
+# Shut guests down on host shutdown, but do not wait long for a guest that
+# ignores the ACPI request (the Alpine guest has no acpid).
+ON_SHUTDOWN=shutdown
+SHUTDOWN_TIMEOUT=25
+PARALLEL_SHUTDOWN=5

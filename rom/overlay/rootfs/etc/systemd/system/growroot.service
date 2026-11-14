@@ -1,0 +1,12 @@
+[Unit]
+Description=Grow the root filesystem to fill the userdata partition
+DefaultDependencies=no
+Before=sysinit.target
+ConditionPathExists=!/etc/growroot-done
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'resize2fs /dev/sdc52 && touch /etc/growroot-done'
+
+[Install]
+WantedBy=sysinit.target
