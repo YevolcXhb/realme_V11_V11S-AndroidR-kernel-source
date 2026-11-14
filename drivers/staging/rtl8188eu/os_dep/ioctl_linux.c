@@ -990,6 +990,19 @@ static int rtw_wx_set_wap(struct net_device *dev,
 		goto exit;
 	}
 
+	/* Setting the BSSID we are already associated with is a no-op.
+	 * wpa_supplicant calls SIOCSIWAP again right after a successful
+	 * association; the driver used to re-issue the join and fail, which
+	 * made wpa_supplicant tear the fresh connection down again
+	 * ("CTRL-EVENT-DISCONNECTED ... reason=3 locally_generated=1").
+	 */
+	if (check_fwstate(pmlmepriv, _FW_LINKED) &&
+	    !memcmp(pmlmepriv->cur_network.network.MacAddress,
+		    temp->sa_data, ETH_ALEN)) {
+		ret = 0;
+		goto exit;
+	}
+
 	if (temp->sa_family != ARPHRD_ETHER) {
 		ret = -EINVAL;
 		goto exit;
