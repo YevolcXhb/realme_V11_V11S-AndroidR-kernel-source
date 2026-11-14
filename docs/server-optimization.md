@@ -64,3 +64,27 @@
 
 实测：`ss -tin` 显示连接使用 bbr；WiFi 下载约 1.4 MB/s（受热点/链路限制）。
 注意：内核本身没有 CONFIG_TCP_CONG_CUBIC？实际 available 里 cubic/bic/reno/bbr 都在，可随时切换。
+
+## 内核第二轮（2026-11-14）
+
+defconfig 追加：
+
+- `CONFIG_TRANSPARENT_HUGEPAGE=y` + `CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y`
+- 关闭 `CONFIG_SCHEDSTATS`、`CONFIG_UPROBES`（调试开销）
+- 尝试关闭 `CONFIG_FTRACE`/`CONFIG_DEBUG_KERNEL` 失败：MTK DRM 与 net/core/rtnetlink 依赖 trace_printk/stack_trace，保持开启
+- 尝试开启 `CONFIG_HUGETLBFS` 失败：4.14 的 mm/hugetlb.c 在 clang -Werror 下编译不过，放弃（THP 已覆盖匿名内存场景）
+
+当前内核：4.14.186+ #1 SMP PREEMPT Sat Nov 14 09:39:18 UTC 2026。
+
+验证：
+
+| 项 | 结果 |
+|---|---|
+| THP | /sys/kernel/mm/transparent_hugepage/enabled = always [madvise] never |
+| BBR/fq | 保持生效 |
+| sysbench CPU | 930-938 events/s（基线 936，无差异） |
+| sysbench 内存 | madvise 8734 MB/s、always 波动 8032-9165 MB/s，无稳定收益，保持 madvise |
+| 模块 | 内核配置变化后 r8188eu 的 modversions CRC 不匹配，已用同构建的 tools/modules/r8188eu.ko 替换 |
+
+注意：升级内核后如果用到 USB Wi-Fi 网卡（r8188eu），必须使用与内核同一次构建的模块，
+否则 systemd-modules-load 会报 Exec format error（modversions 不匹配）。
