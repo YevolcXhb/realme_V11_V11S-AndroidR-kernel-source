@@ -954,12 +954,22 @@ static int rtw_wx_get_range(struct net_device *dev,
 /* s2. rtw_set_802_11_authentication_mode() */
 /* s3. set_802_11_encryption_mode() */
 /* s4. rtw_set_802_11_bssid() */
+/* rtw_wx_set_wap: return proper errno
+ *
+ * This handler used to report every failure as "ret = -1", which userspace
+ * sees as EPERM (errno 1). wpa_supplicant treats EPERM on SIOCSIWAP as "the
+ * driver refused to select the BSSID" and aborts the connection with
+ * "State: ASSOCIATING -> DISCONNECTED (reason=3 locally_generated=1)", which
+ * is what prevented the RTL8188EU adapter from ever staying associated.
+ * Report the real condition instead: ENETDOWN when the interface is not up
+ * yet, EINVAL for a malformed request, EIO when the BSSID cannot be set.
+ */
 static int rtw_wx_set_wap(struct net_device *dev,
 			 struct iw_request_info *info,
 			 union iwreq_data *awrq,
 			 char *extra)
 {
-	uint ret = 0;
+	int ret = 0;
 	struct adapter *padapter = (struct adapter *)rtw_netdev_priv(dev);
 	struct sockaddr *temp = (struct sockaddr *)awrq;
 	struct	mlme_priv	*pmlmepriv = &(padapter->mlmepriv);
@@ -970,12 +980,13 @@ static int rtw_wx_set_wap(struct net_device *dev,
 	enum ndis_802_11_auth_mode	authmode;
 
 	if (_FAIL == rtw_pwr_wakeup(padapter)) {
-		ret = -1;
+		ret = -EIO;
 		goto exit;
 	}
 
 	if (!padapter->bup) {
-		ret = -1;
+		/* Interface is down: ENETDOWN, never EPERM. */
+		ret = -ENETDOWN;
 		goto exit;
 	}
 
@@ -1000,7 +1011,7 @@ static int rtw_wx_set_wap(struct net_device *dev,
 
 		if ((!memcmp(dst_bssid, src_bssid, ETH_ALEN))) {
 			if (!rtw_set_802_11_infrastructure_mode(padapter, pnetwork->network.InfrastructureMode)) {
-				ret = -1;
+				ret = -EIO;
 				spin_unlock_bh(&queue->lock);
 				goto exit;
 			}
@@ -1013,7 +1024,7 @@ static int rtw_wx_set_wap(struct net_device *dev,
 	rtw_set_802_11_authentication_mode(padapter, authmode);
 	/* set_802_11_encryption_mode(padapter, padapter->securitypriv.ndisencryptstatus); */
 	if (rtw_set_802_11_bssid(padapter, temp->sa_data) == false) {
-		ret = -1;
+		ret = -EIO;
 		goto exit;
 	}
 
