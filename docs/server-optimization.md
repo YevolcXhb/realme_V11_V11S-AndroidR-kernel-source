@@ -50,3 +50,17 @@
 - 有线 SSH 在宿主机重启后可能要等约 60 s：设备侧 25 s 内就绪（IP 13 s、sshd 18 s、
   防火墙 25 s、ping 20 s），延迟发生在 Windows 客户端重新识别网络期间（ICMP 不受影响）。
 - 内核未开 CONFIG_TCP_CONG_BBR，需要重编内核（见后续计划）。
+
+## BBR 内核（2026-11-14）
+
+内核 defconfig 已加入 `CONFIG_TCP_CONG_BBR=y`、`CONFIG_NET_SCH_FQ=y`、`CONFIG_DEFAULT_FQ=y`，并去掉 `CONFIG_DEBUG_INFO`（只影响构建体积）。
+
+| 项 | 值 |
+|---|---|
+| 内核版本 | 4.14.186+ #1 SMP PREEMPT Sat Nov 14 08:45:05 UTC 2026 |
+| 拥塞控制 | bbr（/etc/sysctl.d/99-server-tuning.conf） |
+| 默认队列 | fq |
+| 回滚镜像 | tools/boot-f9-backup.img（旧内核） |
+
+实测：`ss -tin` 显示连接使用 bbr；WiFi 下载约 1.4 MB/s（受热点/链路限制）。
+注意：内核本身没有 CONFIG_TCP_CONG_CUBIC？实际 available 里 cubic/bic/reno/bbr 都在，可随时切换。
