@@ -845,6 +845,8 @@ CONFIG_DEFAULT_FQ=y
 # --- drop debug info: build size only, no runtime effect ---
 # CONFIG_DEBUG_INFO is not set
 
+# hugetlb.c does not build with this clang on 4.14 (-Werror array-bounds),
+# so huge pages stay off; THP below gives the anonymous-memory win.
 # --- server tuning round 2: drop debug instrumentation, enable huge pages ---
 # CONFIG_DEBUG_KERNEL is not set
 # CONFIG_SCHEDSTATS is not set
@@ -853,5 +855,5 @@ CONFIG_DEFAULT_FQ=y
 # CONFIG_FTRACE is not set
 CONFIG_TRANSPARENT_HUGEPAGE=y
 CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
-CONFIG_HUGETLBFS=y
-CONFIG_HUGETLB_PAGE=y
+# CONFIG_HUGETLBFS is not set
+# CONFIG_HUGETLB_PAGE is not set
