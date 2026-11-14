@@ -66,7 +66,7 @@ set -e
 echo "root:root" | chpasswd
 sed -i "s/^#\?PermitRootLogin.*/PermitRootLogin yes/;s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config
 systemctl enable ssh docker libvirtd libvirt-guests systemd-networkd 2>/dev/null || true
-systemctl enable mtkwifi-init wifi-connect@wlan0 2>/dev/null || true
+systemctl enable mtkwifi-init wifi-connect@wlan0 wired-connect@eth0 usbgadget-net 2>/dev/null || true
 systemctl enable growroot 2>/dev/null || true
 ln -sf /etc/systemd/system/kvm-net-fw.timer /etc/systemd/system/timers.target.wants/kvm-net-fw.timer 2>/dev/null || true
 mkdir -p /etc/libvirt/qemu/networks/autostart /etc/libvirt/storage/autostart /var/lib/libvirt/images

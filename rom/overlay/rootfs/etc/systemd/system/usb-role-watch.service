@@ -1,0 +1,14 @@
+[Unit]
+Description=Type-C role watcher (dock -> OTG host, otherwise stay device)
+After=systemd-udevd.service
+Before=network-pre.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/usb-role-watch.sh
+Restart=always
+RestartSec=2
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

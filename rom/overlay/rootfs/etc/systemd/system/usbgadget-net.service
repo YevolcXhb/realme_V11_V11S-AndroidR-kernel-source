@@ -1,0 +1,12 @@
+[Unit]
+Description=Bring up USB gadget ethernet with a static address
+After=systemd-udevd.service
+Before=ssh.service telnetd-fallback.service
+Before=ssh.service
+Wants=systemd-udevd.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'for i in 1 2 3 4 5 6 7 8 9 10; do for n in /sys/class/net/*; do N=${n##*/}; case "$N" in usb*|rndis*) /sbin/ip addr add 192.168.42.129/24 dev "$N" 2>/dev/null; /sbin/ip link set "$N" up; exit 0;; esac; done; sleep 1; done'
+[Install]
+WantedBy=multi-user.target

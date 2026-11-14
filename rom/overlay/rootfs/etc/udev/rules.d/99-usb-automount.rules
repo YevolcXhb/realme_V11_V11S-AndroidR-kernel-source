@@ -1,0 +1,2 @@
+# Auto-mount SD cards / USB sticks that appear under the USB-C dock.
+ACTION=="add", SUBSYSTEM=="block", KERNEL=="sd[a-z][0-9]*", ENV{ID_BUS}=="usb", ENV{ID_FS_TYPE}!="", TAG+="systemd", ENV{SYSTEMD_WANTS}+="usb-automount@%k.service"
