@@ -1,0 +1,71 @@
+--- qorig/qemu-8.2.2/hw/block/pflash_cfi01.c	2024-03-05 01:48:15.000000000 +0800
++++ qemu-8.2.2+ds/hw/block/pflash_cfi01.c	2026-11-14 13:28:29.995455882 +0800
+@@ -42,6 +42,7 @@
+ #include "hw/qdev-properties.h"
+ #include "hw/qdev-properties-system.h"
+ #include "sysemu/block-backend.h"
++#include "sysemu/kvm.h"
+ #include "qapi/error.h"
+ #include "qemu/error-report.h"
+ #include "qemu/bitops.h"
+@@ -471,7 +472,9 @@
+     trace_pflash_io_write(pfl->name, offset, width, value, pfl->wcycle);
+     if (!pfl->wcycle) {
+         /* Set the device in I/O access mode */
+-        memory_region_rom_device_set_romd(&pfl->mem, false);
++        if (!kvm_enabled()) {
++            memory_region_rom_device_set_romd(&pfl->mem, false);
++        }
+     }
+ 
+     switch (pfl->wcycle) {
+@@ -655,7 +658,9 @@
+ 
+  mode_read_array:
+     trace_pflash_mode_read_array(pfl->name);
+-    memory_region_rom_device_set_romd(&pfl->mem, true);
++    if (!kvm_enabled()) {
++            memory_region_rom_device_set_romd(&pfl->mem, true);
++        }
+     pfl->wcycle = 0;
+     pfl->cmd = 0x00; /* This model reset value for READ_ARRAY (not CFI) */
+ }
+@@ -823,11 +828,22 @@
+ 
+     total_len = pfl->sector_len * pfl->nb_blocs;
+ 
+-    memory_region_init_rom_device(
+-        &pfl->mem, OBJECT(dev),
+-        &pflash_cfi01_ops,
+-        pfl,
+-        pfl->name, total_len, errp);
++    if (kvm_enabled()) {
++        /*
++         * The vendor KVM of some SoCs (e.g. MT6833) does not provide a usable
++         * ESR syndrome for stage-2 faults, so userspace cannot emulate MMIO
++         * stores. Back the flash with plain RAM instead: guest writes land in
++         * memory and the firmware keeps running.
++         */
++        memory_region_init_ram(&pfl->mem, OBJECT(dev), pfl->name, total_len,
++                               errp);
++    } else {
++        memory_region_init_rom_device(
++            &pfl->mem, OBJECT(dev),
++            &pflash_cfi01_ops,
++            pfl,
++            pfl->name, total_len, errp);
++    }
+     if (*errp) {
+         return;
+     }
+@@ -887,7 +903,9 @@
+      */
+     pfl->cmd = 0x00;
+     pfl->wcycle = 0;
+-    memory_region_rom_device_set_romd(&pfl->mem, true);
++    if (!kvm_enabled()) {
++            memory_region_rom_device_set_romd(&pfl->mem, true);
++        }
+     /*
+      * The WSM ready timer occurs at most 150ns after system reset.
+      * This model deliberately ignores this delay.
