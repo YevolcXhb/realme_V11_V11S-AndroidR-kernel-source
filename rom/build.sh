@@ -61,9 +61,11 @@ sudo mkdir -p "$ROOTFS/usr/share/AAVMF"
 sudo dd if=/dev/zero of="$ROOTFS/usr/share/AAVMF/AAVMF_CODE.no-secboot.fd" bs=1M count=64 status=none
 sudo dd if=/tmp/AAVMF_CODE_2MB.fd of="$ROOTFS/usr/share/AAVMF/AAVMF_CODE.no-secboot.fd" conv=notrunc status=none
 sudo chmod 644 "$ROOTFS/usr/share/AAVMF/AAVMF_CODE.no-secboot.fd"
-if [ -d /usr/lib/ipxe/qemu ]; then
+# ipxe-qemu is installed inside the arm64 rootfs, not on the runner, so copy
+# the option ROMs from there into the directory the patched qemu searches.
+if [ -d "$ROOTFS/usr/lib/ipxe/qemu" ]; then
     sudo mkdir -p "$ROOTFS/usr/share/qemu"
-    sudo cp -n /usr/lib/ipxe/qemu/* "$ROOTFS/usr/share/qemu/" || true
+    sudo cp -n "$ROOTFS/usr/lib/ipxe/qemu/"* "$ROOTFS/usr/share/qemu/" || true
 fi
 # The patched qemu-system-aarch64 looks for its option ROMs (efi-virtio.rom and
 # friends) in /usr/share/qemu. Without them libvirt refuses to start a guest

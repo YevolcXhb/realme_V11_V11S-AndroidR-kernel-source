@@ -27,6 +27,14 @@ DISK="$IMGDIR/$name.img"
 VARS="$IMGDIR/$name.fd"
 
 [ -f "$FW" ] || { echo "missing $FW" >&2; exit 1; }
+
+# The patched qemu looks for its option ROMs (efi-virtio.rom and friends) in
+# /usr/share/qemu. Ubuntu ships them in /usr/lib/ipxe/qemu, so make sure the
+# expected location has them before libvirt starts a guest with a virtio NIC.
+if [ ! -f /usr/share/qemu/efi-virtio.rom ] && [ -d /usr/lib/ipxe/qemu ]; then
+    mkdir -p /usr/share/qemu
+    cp -n /usr/lib/ipxe/qemu/* /usr/share/qemu/ 2>/dev/null || true
+fi
 virsh dominfo "$name" >/dev/null 2>&1 && { echo "domain $name already exists" >&2; exit 1; }
 [ -e "$DISK" ] && { echo "$DISK already exists" >&2; exit 1; }
 
