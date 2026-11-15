@@ -9,7 +9,7 @@ IMG="$PWD/userdata.img"
 SUITE=noble
 MIRROR=http://ports.ubuntu.com/ubuntu-ports
 
-PKGS="ubuntu-minimal ca-certificates curl wget openssh-server usbutils pciutils iproute2 net-tools iputils-ping less vim-tiny sudo rsync kmod procps psmisc tzdata locales man-db gnupg systemd-timesyncd isc-dhcp-client wpasupplicant wireless-tools rfkill python3 htop file unzip zip tar gzip xz-utils nano bash-completion lsof docker.io docker-compose-v2 qemu-system-arm qemu-utils libvirt-daemon-system libvirt-clients bridge-utils dnsmasq-base libxml2-utils autofs ntfs-3g ipxe-qemu dmidecode"
+PKGS="ubuntu-minimal ca-certificates curl wget openssh-server usbutils pciutils iproute2 net-tools iputils-ping less vim-tiny sudo rsync kmod procps psmisc tzdata locales man-db gnupg systemd-timesyncd isc-dhcp-client wpasupplicant wireless-tools rfkill python3 htop file unzip zip tar gzip xz-utils nano bash-completion lsof docker.io docker-compose-v2 qemu-system-arm qemu-utils libvirt-daemon-system libvirt-clients bridge-utils dnsmasq-base libxml2-utils autofs ntfs-3g ipxe-qemu dmidecode clamav-daemon"
 
 echo "== host dependencies =="
 sudo apt-get update -y
@@ -80,6 +80,7 @@ systemctl set-default multi-user.target 2>/dev/null || true
 echo "root:root" | chpasswd
 sed -i "s/^#\?PermitRootLogin.*/PermitRootLogin yes/;s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config
 systemctl enable ssh docker libvirtd libvirt-guests systemd-networkd autofs 2>/dev/null || true
+systemctl enable clamav-freshclam clamav-daemon 2>/dev/null || true
 # Ubuntu 24.04 socket-activates sshd. On this 4.14 kernel the per-connection
 # sshd@ instances failed during earlier installs, which is a lockout risk: run
 # one plain sshd instead and make sure /run/sshd and the host keys exist.
@@ -138,10 +139,3 @@ sudo mkdir -p /tmp/rommnt/proc /tmp/rommnt/sys /tmp/rommnt/dev /tmp/rommnt/run /
 sudo chmod 1777 /tmp/rommnt/tmp
 sudo sync
 sudo umount /tmp/rommnt
-
-echo "== compress =="
-rm -f userdata.img.gz
-gzip -1 -c "$IMG" > userdata.img.gz
-ls -lh "$IMG" userdata.img.gz
-sha256sum userdata.img.gz > userdata.img.gz.sha256
-echo "== done =="
