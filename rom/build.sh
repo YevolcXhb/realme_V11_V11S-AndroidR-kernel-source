@@ -112,7 +112,10 @@ ln -sf /etc/systemd/system/kvm-net-fw.timer /etc/systemd/system/timers.target.wa
 mkdir -p /etc/libvirt/qemu/networks/autostart /etc/libvirt/storage/autostart /var/lib/libvirt/images
 ln -sf ../default.xml /etc/libvirt/qemu/networks/autostart/default.xml
 ln -sf ../images.xml /etc/libvirt/storage/autostart/images.xml
-chmod 755 /usr/local/sbin/*.sh /usr/local/bin/*.sh 2>/dev/null || true
+# every helper in /usr/local/{s,}bin must be executable: the WMT bring-up
+# binaries (wmt-init, wmt-setstp, wmt-setpatch*) are compiled ELF helpers, not
+# shell scripts, and without the exec bit mtkwifi-init dies with "Permission denied".
+chmod 755 /usr/local/sbin/* /usr/local/bin/* 2>/dev/null || true
 depmod -a 4.14.186+ 2>/dev/null || true
 '
 
