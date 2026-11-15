@@ -9,7 +9,7 @@ IMG="$PWD/userdata.img"
 SUITE=noble
 MIRROR=http://ports.ubuntu.com/ubuntu-ports
 
-PKGS="ubuntu-minimal ca-certificates curl wget openssh-server usbutils pciutils iproute2 net-tools iputils-ping less vim-tiny sudo rsync kmod procps psmisc tzdata locales man-db gnupg systemd-timesyncd isc-dhcp-client wpasupplicant wireless-tools rfkill python3 htop file unzip zip tar gzip xz-utils nano bash-completion lsof docker.io docker-compose-v2 qemu-system-arm qemu-utils libvirt-daemon-system libvirt-clients bridge-utils dnsmasq-base libxml2-utils autofs ntfs-3g ipxe-qemu"
+PKGS="ubuntu-minimal ca-certificates curl wget openssh-server usbutils pciutils iproute2 net-tools iputils-ping less vim-tiny sudo rsync kmod procps psmisc tzdata locales man-db gnupg systemd-timesyncd isc-dhcp-client wpasupplicant wireless-tools rfkill python3 htop file unzip zip tar gzip xz-utils nano bash-completion lsof docker.io docker-compose-v2 qemu-system-arm qemu-utils libvirt-daemon-system libvirt-clients bridge-utils dnsmasq-base libxml2-utils autofs ntfs-3g ipxe-qemu dmidecode"
 
 echo "== host dependencies =="
 sudo apt-get update -y
@@ -73,7 +73,8 @@ sudo cp -n /usr/share/qemu/*.rom "$ROOTFS/usr/share/qemu/" 2>/dev/null || true
 echo "== system configuration =="
 sudo chroot "$ROOTFS" /bin/bash -c '
 set -e
-mkdir -p /media/usb /data/oplus_charge
+mkdir -p /media/usb /data/oplus_charge /var/log/journal
+systemctl set-default multi-user.target 2>/dev/null || true
 echo "root:root" | chpasswd
 sed -i "s/^#\?PermitRootLogin.*/PermitRootLogin yes/;s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config
 systemctl enable ssh docker libvirtd libvirt-guests systemd-networkd autofs 2>/dev/null || true
@@ -99,6 +100,12 @@ depmod -a 4.14.186+ 2>/dev/null || true
 '
 
 echo "== image =="
+USED_KB=$(sudo du -sk "$ROOTFS" | cut -f1)
+if [ "$USED_KB" -gt 5600000 ]; then
+    echo "rootfs is too large for the 6 GiB image: ${USED_KB} KiB" >&2
+    exit 1
+fi
+echo "rootfs size: ${USED_KB} KiB"
 sudo umount "$ROOTFS/dev" "$ROOTFS/sys" "$ROOTFS/proc" || true
 rm -f "$IMG"
 truncate -s 6G "$IMG"
