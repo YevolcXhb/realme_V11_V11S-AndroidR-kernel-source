@@ -9,7 +9,7 @@ IMG="$PWD/userdata.img"
 SUITE=noble
 MIRROR=http://ports.ubuntu.com/ubuntu-ports
 
-PKGS="ubuntu-minimal ca-certificates curl wget openssh-server usbutils pciutils iproute2 net-tools iputils-ping less vim-tiny sudo rsync kmod procps psmisc tzdata locales man-db gnupg systemd-timesyncd isc-dhcp-client wpasupplicant wireless-tools rfkill python3 htop file unzip zip tar gzip xz-utils nano bash-completion lsof docker.io docker-compose-v2 qemu-system-arm qemu-utils libvirt-daemon-system libvirt-clients bridge-utils dnsmasq-base libxml2-utils autofs ntfs-3g"
+PKGS="ubuntu-minimal ca-certificates curl wget openssh-server usbutils pciutils iproute2 net-tools iputils-ping less vim-tiny sudo rsync kmod procps psmisc tzdata locales man-db gnupg systemd-timesyncd isc-dhcp-client wpasupplicant wireless-tools rfkill python3 htop file unzip zip tar gzip xz-utils nano bash-completion lsof docker.io docker-compose-v2 qemu-system-arm qemu-utils libvirt-daemon-system libvirt-clients bridge-utils dnsmasq-base libxml2-utils autofs ntfs-3g ipxe-qemu"
 
 echo "== host dependencies =="
 sudo apt-get update -y
@@ -65,11 +65,15 @@ if [ -d /usr/lib/ipxe/qemu ]; then
     sudo mkdir -p "$ROOTFS/usr/share/qemu"
     sudo cp -n /usr/lib/ipxe/qemu/* "$ROOTFS/usr/share/qemu/" || true
 fi
+# The patched qemu-system-aarch64 looks for its option ROMs (efi-virtio.rom and
+# friends) in /usr/share/qemu. Without them libvirt refuses to start a guest
+# with a virtio NIC ("failed to find romfile efi-virtio.rom").
+sudo cp -n /usr/share/qemu/*.rom "$ROOTFS/usr/share/qemu/" 2>/dev/null || true
 
 echo "== system configuration =="
 sudo chroot "$ROOTFS" /bin/bash -c '
 set -e
-mkdir -p /media/usb
+mkdir -p /media/usb /data/oplus_charge
 echo "root:root" | chpasswd
 sed -i "s/^#\?PermitRootLogin.*/PermitRootLogin yes/;s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config
 systemctl enable ssh docker libvirtd libvirt-guests systemd-networkd autofs 2>/dev/null || true
@@ -84,7 +88,7 @@ systemctl disable systemd-networkd-wait-online.service 2>/dev/null || true
 systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
 systemctl disable atd.service 2>/dev/null || true
 systemctl enable usbwifi-load usbwifi-link usbwifi-dhcp 2>/dev/null || true
-mkdir -p /media/usb
+mkdir -p /media/usb /data/oplus_charge
 chmod 755 /usr/local/sbin/wpa_supplicant29 2>/dev/null || true
 ln -sf /etc/systemd/system/kvm-net-fw.timer /etc/systemd/system/timers.target.wants/kvm-net-fw.timer 2>/dev/null || true
 mkdir -p /etc/libvirt/qemu/networks/autostart /etc/libvirt/storage/autostart /var/lib/libvirt/images
