@@ -990,6 +990,11 @@ static int rtw_wx_set_wap(struct net_device *dev,
 		goto exit;
 	}
 
+	if (temp->sa_family != ARPHRD_ETHER) {
+		ret = -EINVAL;
+		goto exit;
+	}
+
 	/* Setting the BSSID we are already associated with is a no-op.
 	 * wpa_supplicant calls SIOCSIWAP again right after a successful
 	 * association; the driver used to re-issue the join and fail, which
@@ -1000,11 +1005,6 @@ static int rtw_wx_set_wap(struct net_device *dev,
 	    !memcmp(pmlmepriv->cur_network.network.MacAddress,
 		    temp->sa_data, ETH_ALEN)) {
 		ret = 0;
-		goto exit;
-	}
-
-	if (temp->sa_family != ARPHRD_ETHER) {
-		ret = -EINVAL;
 		goto exit;
 	}
 
