@@ -1,0 +1,7 @@
+# Pin the dock's USB LAN adapter to eth0. Without this, udev renames it to
+# enx<mac> after a re-enumeration and the wired-connect@eth0 unit no longer matches.
+[Match]
+MACAddress=d0:0c:5e:b2:02:34
+
+[Link]
+Name=eth0

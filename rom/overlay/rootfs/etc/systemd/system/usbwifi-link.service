@@ -6,9 +6,12 @@ Wants=usbwifi-load.service
 
 [Service]
 Type=simple
+# Restart=always: wpa_supplicant can exit 0 on its own (for example after the
+# interface is re-enumerated); on-failure would leave the link down for good.
+Restart=always
+RestartSec=10
+ExecStartPre=/sbin/modprobe r8188eu
 ExecStart=/usr/local/sbin/wpa_supplicant29 -i wlxusb0 -D wext -c /etc/wpa_supplicant/wpa_supplicant-usb.conf
-Restart=on-failure
-RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
