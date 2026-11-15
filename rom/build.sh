@@ -100,13 +100,14 @@ depmod -a 4.14.186+ 2>/dev/null || true
 '
 
 echo "== image =="
+# unmount the bind mounts first: du would otherwise walk /proc and fail
+sudo umount "$ROOTFS/dev" "$ROOTFS/sys" "$ROOTFS/proc" || true
 USED_KB=$(sudo du -sk "$ROOTFS" | cut -f1)
 if [ "$USED_KB" -gt 5600000 ]; then
     echo "rootfs is too large for the 6 GiB image: ${USED_KB} KiB" >&2
     exit 1
 fi
 echo "rootfs size: ${USED_KB} KiB"
-sudo umount "$ROOTFS/dev" "$ROOTFS/sys" "$ROOTFS/proc" || true
 rm -f "$IMG"
 truncate -s 6G "$IMG"
 mkfs.ext4 -q -F -L ubuntu-rootfs -m 1 "$IMG"
