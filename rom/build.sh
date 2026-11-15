@@ -80,6 +80,21 @@ systemctl set-default multi-user.target 2>/dev/null || true
 echo "root:root" | chpasswd
 sed -i "s/^#\?PermitRootLogin.*/PermitRootLogin yes/;s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config
 systemctl enable ssh docker libvirtd libvirt-guests systemd-networkd autofs 2>/dev/null || true
+# Ubuntu 24.04 socket-activates sshd. On this 4.14 kernel the per-connection
+# sshd@ instances failed during earlier installs, which is a lockout risk: run
+# one plain sshd instead and make sure /run/sshd and the host keys exist.
+systemctl disable ssh.socket 2>/dev/null || true
+systemctl mask ssh.socket 2>/dev/null || true
+rm -f /etc/systemd/system/ssh.service.requires/ssh.socket /etc/systemd/system/sockets.target.wants/ssh.socket
+rmdir /etc/systemd/system/ssh.service.requires 2>/dev/null || true
+mkdir -p /etc/systemd/system/ssh.service.d
+cat > /etc/systemd/system/ssh.service.d/override.conf <<'SSHUNIT'
+[Service]
+ExecStartPre=
+ExecStartPre=/bin/mkdir -p /run/sshd
+ExecStartPre=/usr/bin/ssh-keygen -A
+SSHUNIT
+systemctl enable ssh 2>/dev/null || true
 systemctl enable mtkwifi-init wifi-connect@wlan0 wired-connect@eth0 usbgadget-net 2>/dev/null || true
 systemctl enable growroot 2>/dev/null || true
 # autofs ships with After/Wants=network-online.target, which never activates on
