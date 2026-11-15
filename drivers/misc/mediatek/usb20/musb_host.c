@@ -180,23 +180,6 @@ int musb_host_alloc_ep_fifo(struct musb *musb, struct musb_qh *qh, u8 is_in)
 			c_size = 6;
 			/* mark double buffer used */
 			qh->db_used = true;
-		} else if (qh->type == USB_ENDPOINT_XFER_BULK) {
-			/* FRAME_FIFO: one Ethernet frame is 1514 bytes = 3 USB
-			 * packets. With a single 512-byte FIFO the controller
-			 * overruns between packets and the frame is lost, which
-			 * is what made the dock's CDC LAN adapter drop 25-40% of
-			 * the frames in the IN direction. Give bulk endpoints
-			 * enough room for a full frame (IN 2048, OUT 1024).
-			 */
-			if (is_in) {
-				request_fifo_sz = 2048;
-				fifo_unit_nr = 4;
-				c_size = 8;
-			} else {
-				request_fifo_sz = 1024;
-				fifo_unit_nr = 2;
-				c_size = 7;
-			}
 		} else {
 			request_fifo_sz = 512;
 			fifo_unit_nr = 1;
@@ -300,10 +283,6 @@ void musb_host_free_ep_fifo(struct musb *musb, struct musb_qh *qh, u8 is_in)
 		if (musb_host_db_enable && qh->type == USB_ENDPOINT_XFER_BULK) {
 			request_fifo_sz = 1024;
 			fifo_unit_nr = 2;
-		} else if (qh->type == USB_ENDPOINT_XFER_BULK) {
-			/* must mirror musb_host_alloc_ep_fifo() */
-			request_fifo_sz = is_in ? 2048 : 1024;
-			fifo_unit_nr = is_in ? 4 : 2;
 		} else {
 			request_fifo_sz = 512;
 			fifo_unit_nr = 1;
