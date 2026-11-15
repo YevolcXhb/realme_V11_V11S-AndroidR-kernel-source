@@ -21,7 +21,7 @@ diskgb="${4:-6}"
 [ -n "$name" ] || { echo "usage: $0 <name> [vcpus] [mem_mb] [disk_gb]" >&2; exit 2; }
 case "$name" in *[!a-zA-Z0-9_-]*) echo "name must be alnum/-/_" >&2; exit 2;; esac
 
-IMGDIR=/var/lib/libvirt/images
+IMGDIR=/mnt/super/libvirt/images
 FW=/usr/share/AAVMF/AAVMF_CODE.no-secboot.fd
 DISK="$IMGDIR/$name.img"
 VARS="$IMGDIR/$name.fd"
