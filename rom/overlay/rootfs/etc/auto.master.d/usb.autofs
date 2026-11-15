@@ -1,4 +1,8 @@
 # autofs: mount removable media on first access.
 # The kernel autofs4 module triggers the mount; the automount daemon performs it,
 # so no udev rule and no custom script are involved.
-/media/usb	/etc/auto.usb	--timeout=60
+#
+# timeout=3600 keeps an idle card mounted for an hour instead of 60 seconds, so
+# panels and file managers that poll /media/usb do not see it disappear. Use 0
+# for "never expire" (then always run "usbdisks umount" before removing a card).
+/media/usb	/etc/auto.usb	--timeout=3600
