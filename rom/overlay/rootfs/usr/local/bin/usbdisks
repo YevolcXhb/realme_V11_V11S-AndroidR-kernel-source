@@ -1,0 +1,150 @@
+#!/bin/sh
+# usbdisks - list removable disks attached to this box and mount/unmount them.
+#
+# Mounting goes through autofs: the first access to /media/usb/<device> makes the
+# automount daemon mount it, and an idle mount is dropped after 60 s. A plain
+# "ls /media/usb" shows nothing because autofs does not list device names - this
+# helper is that missing index.
+#
+# Usage:
+#   usbdisks                  list removable partitions and their mount state
+#   usbdisks mount [dev|all]  mount one device (or all of them) via autofs
+#   usbdisks umount [dev|all] unmount one device (or all of them)
+#   usbdisks path <dev>       print the mount path of a device
+set -u
+
+MNT=/media/usb
+
+# Internal storage on this phone: sda/sdb are small firmware areas and sdc is the
+# UFS device that holds the root filesystem. Anything else in /sys/block is a USB
+# disk, a card reader or an MMC slot and is treated as removable.
+is_internal() {
+    case "$1" in
+        loop*|ram*|zram*|sr*|sda|sdb|sdc|mmcblk0) return 0 ;;
+    esac
+    return 1
+}
+
+devices() {
+    for disk_path in /sys/block/*; do
+        disk=$(basename "$disk_path")
+        is_internal "$disk" && continue
+        found=0
+        for part_path in "$disk_path"/"$disk"*; do
+            [ -d "$part_path" ] || continue
+            echo "$(basename "$part_path")"
+            found=1
+        done
+        [ "$found" = 0 ] && echo "$disk"
+    done
+}
+
+dev_size() {
+    bytes=$(blockdev --getsize64 "/dev/$1" 2>/dev/null) || { echo "?"; return; }
+    if [ "$bytes" -ge 1000000000 ]; then
+        awk -v b="$bytes" 'BEGIN{printf "%.1fG", b/1000000000}'
+    elif [ "$bytes" -ge 1000000 ]; then
+        awk -v b="$bytes" 'BEGIN{printf "%.0fM", b/1000000}'
+    else
+        awk -v b="$bytes" 'BEGIN{printf "%.0fK", b/1000}'
+    fi
+}
+
+dev_attr() {
+    value=$(blkid -o value -s "$1" "/dev/$2" 2>/dev/null)
+    [ -n "$value" ] || value=-
+    echo "$value"
+}
+
+is_mounted() {
+    # $1 is a device name (sdd1) or a path; mountpoint answers both
+    case "$1" in
+        /dev/*) mountpoint -q "/media/usb/${1#/dev/}" 2>/dev/null ;;
+        *)      mountpoint -q "/media/usb/$1" 2>/dev/null ;;
+    esac
+}
+
+cmd_list() {
+    printf '%-12s %8s %8s %-16s %-6s %s\n' DEVICE SIZE TYPE LABEL MOUNTED PATH
+    any=0
+    for dev in $(devices); do
+        any=1
+        if is_mounted "/dev/$dev"; then state=yes; else state=no; fi
+        printf '%-12s %8s %8s %-16s %-6s %s\n' \
+            "$dev" "$(dev_size "$dev")" "$(dev_attr TYPE "$dev")" \
+            "$(dev_attr LABEL "$dev")" "$state" "$MNT/$dev"
+    done
+    if [ "$any" = 0 ]; then
+        echo "no removable disks attached"
+        echo "(insert an SD card or a USB stick, then run usbdisks again)"
+    else
+        echo
+        echo "mount with: usbdisks mount all   then browse $MNT/<device>"
+    fi
+}
+
+cmd_mount() {
+    target=${1:-all}
+    if [ "$target" = all ]; then
+        list=$(devices)
+    else
+        list=$(echo "$target" | sed 's|/dev/||; s|^/media/usb/||')
+    fi
+    [ -z "$list" ] && { echo "no removable disks attached"; return 1; }
+    rc=0
+    for dev in $list; do
+        [ -b "/dev/$dev" ] || { echo "not a block device: $dev"; rc=1; continue; }
+        # the access itself is what makes autofs mount it
+        if ls "$MNT/$dev" >/dev/null 2>&1; then
+            if is_mounted "/dev/$dev"; then
+                echo "mounted $dev at $MNT/$dev"
+            else
+                echo "failed to mount $dev (see: dmesg | tail -5)"
+                rc=1
+            fi
+        else
+            echo "failed to mount $dev"
+            rc=1
+        fi
+    done
+    return $rc
+}
+
+cmd_umount() {
+    target=${1:-all}
+    if [ "$target" = all ]; then
+        list=$(devices)
+    else
+        list=$(echo "$target" | sed 's|/dev/||; s|^/media/usb/||')
+    fi
+    [ -z "$list" ] && { echo "no removable disks attached"; return 1; }
+    rc=0
+    for dev in $list; do
+        if is_mounted "/dev/$dev"; then
+            umount "$MNT/$dev" 2>/dev/null || umount "/dev/$dev" 2>/dev/null
+            if is_mounted "/dev/$dev"; then
+                echo "failed to unmount $dev (busy: exit the directory first)"
+                rc=1
+            else
+                echo "unmounted $dev"
+            fi
+        else
+            echo "$dev is not mounted"
+        fi
+    done
+    return $rc
+}
+
+case "${1:-list}" in
+    list|ls)        cmd_list ;;
+    mount)          cmd_mount "${2:-all}" ;;
+    umount|unmount) cmd_umount "${2:-all}" ;;
+    path)           [ -n "${2:-}" ] && echo "$MNT/$2" || exit 1 ;;
+    -h|--help|help)
+        echo "usage: usbdisks [list | mount [dev|all] | umount [dev|all] | path dev]"
+        ;;
+    *)
+        echo "usage: usbdisks [list | mount [dev|all] | umount [dev|all] | path dev]" >&2
+        exit 1
+        ;;
+esac
