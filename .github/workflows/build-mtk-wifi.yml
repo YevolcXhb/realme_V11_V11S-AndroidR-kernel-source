@@ -134,10 +134,6 @@ jobs:
           make -j"$(nproc)" O=out ARCH=arm64 CC=clang LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
             CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" HOSTCC=gcc-9 HOSTCXX=g++-9 \
             KCFLAGS="-DOPLUS_MT6833_POWERINFO_STANDBY -Wno-error" KBUILD_MODPOST_WARN=1 MTK_PLATFORM=mt6833 $FORCE \
-            # The Makefile filter is $(filter "CONSYS_%",$(CONFIG_MTK_COMBO_CHIP)):
-            # the pattern contains literal double quotes, so the value must too,
-            # otherwise platform/mt6833{,_dbg}.o are not compiled into wmt_drv and
-            # the module references g_mapped_reg_table without defining it.
             CONFIG_MTK_COMBO_CHIP='"CONSYS_6833"' MTK_PLATFORM=mt6833 \
             M="$PWD/kernel_modules/connectivity/common" modules 2>&1 | tee mtk_wmt.log
           grep -E "MODPOST|LD \[M\]" mtk_wmt.log | tail -3 || true
